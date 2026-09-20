@@ -1,0 +1,1620 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>SAMVEDAN — Fleet Command Center</title>
+        <link rel="stylesheet" href="style.css" />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap"
+            rel="stylesheet"
+        />
+        <style>
+            /* ========== CONTROL ROOM MINE ROAD NETWORK SPECIFIC STYLES ========== */
+            .map-area {
+                position: relative;
+                background: #0a0e17;
+                border: 1px solid var(--border-color);
+                border-radius: 12px;
+                overflow: hidden;
+                flex: 2.2;
+                min-height: 0;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+                user-select: none;
+            }
+
+            /* Tactical Map Controls Header */
+            .map-top-bar {
+                position: absolute;
+                top: 12px;
+                left: 16px;
+                right: 16px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                pointer-events: none;
+                z-index: 40;
+            }
+            .map-sector-title {
+                background: rgba(6, 10, 18, 0.85);
+                backdrop-filter: blur(12px);
+                border: 1px solid var(--border-color);
+                padding: 6px 14px;
+                border-radius: 8px;
+                font-size: 11px;
+                font-weight: 800;
+                font-family: var(--font-mono);
+                letter-spacing: 2px;
+                color: #ffffff;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                pointer-events: auto;
+            }
+            .map-sector-title .live-pulse {
+                width: 7px;
+                height: 7px;
+                border-radius: 50%;
+                background: var(--accent-green);
+                box-shadow: 0 0 8px var(--accent-green);
+            }
+            .map-controls-group {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                pointer-events: auto;
+            }
+            .map-btn {
+                background: rgba(6, 10, 18, 0.85);
+                backdrop-filter: blur(12px);
+                border: 1px solid var(--border-color);
+                color: var(--text-main);
+                font-family: var(--font-mono);
+                font-size: 10px;
+                font-weight: 700;
+                padding: 6px 12px;
+                border-radius: 8px;
+                cursor: pointer;
+                transition: all 0.2s;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+            .map-btn:hover {
+                border-color: var(--accent-primary);
+                color: var(--accent-primary);
+                box-shadow: 0 0 14px var(--accent-primary-glow);
+            }
+            .map-btn.active {
+                background: rgba(0, 229, 255, 0.15);
+                border-color: var(--accent-primary);
+                color: var(--accent-primary);
+            }
+
+            /* SVG Road Network Layer */
+            .mine-map-svg {
+                position: absolute;
+                inset: 0;
+                width: 100%;
+                height: 100%;
+                display: block;
+            }
+
+            /* Realistic Mine Haul Trucks on Map */
+            .map-truck-node {
+                position: absolute;
+                width: 32px;
+                height: 32px;
+                transform: translate(-50%, -50%);
+                cursor: pointer;
+                z-index: 25;
+                transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .map-truck-node:hover {
+                transform: translate(-50%, -50%) scale(1.35);
+                z-index: 50;
+            }
+            .truck-svg-icon {
+                width: 26px;
+                height: 26px;
+                filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.8));
+            }
+            .truck-halo {
+                position: absolute;
+                inset: -4px;
+                border-radius: 50%;
+                border: 2px solid var(--accent-green);
+                box-shadow: 0 0 12px var(--accent-green-glow);
+                pointer-events: none;
+            }
+            .map-truck-node.caution .truck-halo {
+                border-color: var(--accent-amber);
+                box-shadow: 0 0 16px var(--accent-amber-glow);
+            }
+            .map-truck-node.critical .truck-halo {
+                border-color: var(--accent-red);
+                box-shadow: 0 0 20px var(--accent-red-glow);
+                animation: truck-critical-pulse 1s infinite alternate;
+            }
+            @keyframes truck-critical-pulse {
+                from {
+                    transform: scale(0.9);
+                    opacity: 0.6;
+                }
+                to {
+                    transform: scale(1.35);
+                    opacity: 1;
+                    box-shadow: 0 0 25px var(--accent-red);
+                }
+            }
+
+            /* Tag pill label below truck */
+            .truck-tag-pill {
+                position: absolute;
+                top: 100%;
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(4, 8, 16, 0.9);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                color: #ffffff;
+                font-family: var(--font-mono);
+                font-size: 8px;
+                font-weight: 800;
+                padding: 1px 5px;
+                border-radius: 4px;
+                white-space: nowrap;
+                margin-top: 2px;
+                pointer-events: none;
+            }
+            .map-truck-node.critical .truck-tag-pill {
+                background: var(--accent-red);
+                border-color: #ffffff;
+                color: #ffffff;
+                box-shadow: 0 0 10px var(--accent-red-glow);
+            }
+
+            /* Enhanced Interactive Truck Tooltip */
+            .map-truck-tooltip {
+                display: none;
+                position: absolute;
+                bottom: 38px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(8, 12, 22, 0.95);
+                border: 1px solid var(--border-highlight);
+                border-radius: 8px;
+                padding: 10px 14px;
+                font-family: var(--font-mono);
+                font-size: 10px;
+                color: #f0f4f8;
+                white-space: nowrap;
+                box-shadow:
+                    0 8px 30px rgba(0, 0, 0, 0.85),
+                    0 0 15px rgba(0, 229, 255, 0.25);
+                backdrop-filter: blur(16px);
+                z-index: 60;
+                pointer-events: none;
+            }
+            .map-truck-node:hover .map-truck-tooltip {
+                display: block;
+            }
+            .tt-header {
+                font-weight: 800;
+                color: #ffffff;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+                padding-bottom: 5px;
+                margin-bottom: 6px;
+                gap: 14px;
+            }
+            .tt-badge {
+                font-size: 8.5px;
+                padding: 2px 6px;
+                border-radius: 3px;
+                font-weight: 800;
+            }
+            .tt-badge.critical {
+                background: var(--accent-red);
+                color: #fff;
+            }
+            .tt-badge.caution {
+                background: var(--accent-amber);
+                color: #000;
+            }
+            .tt-badge.nominal {
+                background: var(--accent-green);
+                color: #000;
+            }
+
+            /* Map Legend Footer */
+            .map-footer-legend {
+                position: absolute;
+                bottom: 12px;
+                left: 16px;
+                background: rgba(6, 10, 18, 0.85);
+                backdrop-filter: blur(12px);
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                padding: 8px 14px;
+                font-family: var(--font-mono);
+                font-size: 9.5px;
+                color: rgba(255, 255, 255, 0.75);
+                display: flex;
+                gap: 16px;
+                align-items: center;
+                z-index: 40;
+                pointer-events: none;
+            }
+            .leg-item {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+            .leg-dot {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+            }
+
+            /* Tactical Telemetry Inspector Panel in Sidebar */
+            .unit-telemetry-card {
+                background: rgba(14, 20, 34, 0.65);
+                border: 1px solid var(--border-color);
+                border-radius: 10px;
+                padding: 12px;
+                margin-bottom: 10px;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+            .telemetry-row {
+                display: flex;
+                justify-content: space-between;
+                font-family: var(--font-mono);
+                font-size: 10.5px;
+                color: var(--text-muted);
+            }
+            .telemetry-row span {
+                color: #ffffff;
+                font-weight: 700;
+            }
+        </style>
+    </head>
+    <body class="control-room-view">
+        <!-- Global Top Navigation -->
+        <nav class="top-nav">
+            <div class="brand">
+                <!-- Official SAMVEDAN 3D Delta Logo Image -->
+                <img src="assets/logo.png" class="brand-logo-img" alt="SAMVEDAN Logo" />
+                <div class="brand-text-block">
+                    <div class="brand-main-title">SAMVEDAN <span class="brand-badge">FLEET DISPATCH</span></div>
+                    <div class="brand-sub-title">NMDC BAILADILA COMPLEX // C-V2X DIGITAL TWIN</div>
+                </div>
+            </div>
+            <div class="nav-right-actions">
+                <div class="toggle-container">
+                    <a href="index.html" class="toggle-btn">DASHBOARD VIEW</a>
+                    <a href="control-room.html" class="toggle-btn active">CONTROL ROOM VIEW</a>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Command Layout -->
+        <main class="main-content">
+            <div class="control-room-layout">
+                <!-- ========================================================
+                 LEFT: REALISTIC MINE HAUL ROAD FLEET MAP
+                 ======================================================== -->
+                <div class="map-area" id="mine-fleet-map">
+                    <!-- Tactical Map Header -->
+                    <div class="map-top-bar">
+                        <div class="map-sector-title">
+                            <div class="live-pulse"></div>
+                            <span>NMDC BAILADILA IRON ORE MINE // DEPOSIT 11 OPEN-CAST HAULAGE NETWORK</span>
+                        </div>
+                        <div class="map-controls-group">
+                            <button class="map-btn active" id="toggle-fog-heatmap" title="Toggle Atmospheric Fog Layer">
+                                🌫 FOG HEATMAP: <span id="fog-toggle-status">ON</span>
+                            </button>
+                            <button class="map-btn" id="toggle-contour-labels" title="Toggle Quarry Elevation Benches">
+                                ⛰ BENCH CONTOURS
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- SVG Road Network: Realistic Mine Quarry Haulage -->
+                    <svg
+                        class="mine-map-svg"
+                        viewBox="0 0 1000 700"
+                        preserveAspectRatio="xMidYMid meet"
+                        xmlns="http://www.w3.org/2000/svg"
+                    >
+                        <defs>
+                            <!-- Earthy Quarry Terrain Shading -->
+                            <radialGradient id="quarryDeepPit" cx="50%" cy="50%" r="50%">
+                                <stop offset="0%" stop-color="#0f151f" stop-opacity="1" />
+                                <stop offset="60%" stop-color="#18202d" stop-opacity="0.9" />
+                                <stop offset="100%" stop-color="#232c3a" stop-opacity="0.6" />
+                            </radialGradient>
+                            <!-- Haul Road Surface Texture -->
+                            <linearGradient id="roadSurfaceGrad" x1="0" y1="0" x2="1" y2="1">
+                                <stop offset="0%" stop-color="#2e3846" />
+                                <stop offset="50%" stop-color="#3c4756" />
+                                <stop offset="100%" stop-color="#2a3340" />
+                            </linearGradient>
+                            <!-- Road Glow for active segments -->
+                            <filter id="roadGlowFilter" x="-20%" y="-20%" width="140%" height="140%">
+                                <feGaussianBlur stdDeviation="2.5" result="blur" />
+                                <feMerge>
+                                    <feMergeNode in="blur" />
+                                    <feMergeNode in="SourceGraphic" />
+                                </feMerge>
+                            </filter>
+                            <!-- Atmospheric Fog Radial Gradients -->
+                            <radialGradient id="fogClusterPit" cx="50%" cy="52%" r="45%">
+                                <stop offset="0%" stop-color="#ff1744" stop-opacity="0.25" />
+                                <stop offset="40%" stop-color="#ff9100" stop-opacity="0.18" />
+                                <stop offset="80%" stop-color="#00e5ff" stop-opacity="0.08" />
+                                <stop offset="100%" stop-color="#00e5ff" stop-opacity="0" />
+                            </radialGradient>
+                            <radialGradient id="fogClusterSouth" cx="28%" cy="75%" r="35%">
+                                <stop offset="0%" stop-color="#ff9100" stop-opacity="0.22" />
+                                <stop offset="60%" stop-color="#ffea00" stop-opacity="0.1" />
+                                <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+                            </radialGradient>
+                        </defs>
+
+                        <!-- Base Earthy Terrain Layer -->
+                        <rect width="1000" height="700" fill="#0d111a" />
+
+                        <!-- Topographic Grid lines -->
+                        <g stroke="rgba(255, 255, 255, 0.03)" stroke-width="0.75">
+                            <line x1="100" y1="0" x2="100" y2="700" />
+                            <line x1="200" y1="0" x2="200" y2="700" />
+                            <line x1="300" y1="0" x2="300" y2="700" />
+                            <line x1="400" y1="0" x2="400" y2="700" />
+                            <line x1="500" y1="0" x2="500" y2="700" />
+                            <line x1="600" y1="0" x2="600" y2="700" />
+                            <line x1="700" y1="0" x2="700" y2="700" />
+                            <line x1="800" y1="0" x2="800" y2="700" />
+                            <line x1="900" y1="0" x2="900" y2="700" />
+                            <line x1="0" y1="100" x2="1000" y2="100" />
+                            <line x1="0" y1="200" x2="1000" y2="200" />
+                            <line x1="0" y1="300" x2="1000" y2="300" />
+                            <line x1="0" y1="400" x2="1000" y2="400" />
+                            <line x1="0" y1="500" x2="1000" y2="500" />
+                            <line x1="0" y1="600" x2="1000" y2="600" />
+                        </g>
+
+                        <!-- ========================================================
+                         OPEN PIT MINE EXCAVATION BENCHES (TERRACES)
+                         ======================================================== -->
+                        <!-- Outer Pit Rim (Bench 01: Elevation +40m) -->
+                        <path
+                            d="M 320,180 C 420,140 600,150 680,210 C 760,270 750,420 680,490 C 600,560 400,570 320,500 C 240,430 220,230 320,180 Z"
+                            fill="#151d28"
+                            stroke="rgba(255, 200, 120, 0.25)"
+                            stroke-width="2"
+                        />
+                        <text
+                            x="500"
+                            y="170"
+                            fill="rgba(255,255,255,0.3)"
+                            font-size="9"
+                            font-family="monospace"
+                            text-anchor="middle"
+                        >
+                            PIT RIM // BENCH-01 (+40m)
+                        </text>
+
+                        <!-- Bench 03 (Elevation 0m) -->
+                        <path
+                            d="M 350,220 C 430,190 580,200 640,240 C 700,290 690,400 630,450 C 570,500 420,510 360,460 C 290,400 280,260 350,220 Z"
+                            fill="#111822"
+                            stroke="rgba(255, 200, 120, 0.2)"
+                            stroke-width="1.5"
+                            stroke-dasharray="8,4"
+                        />
+
+                        <!-- Bench 05 (Elevation -45m) -->
+                        <path
+                            d="M 390,260 C 450,230 550,240 600,280 C 650,320 640,390 590,420 C 540,460 440,460 390,420 C 340,380 340,290 390,260 Z"
+                            fill="#0d131c"
+                            stroke="rgba(255, 200, 120, 0.15)"
+                            stroke-width="1.2"
+                        />
+
+                        <!-- Deep Pit Floor (Bench 07: Elevation -85m - EXTRACTION FACE) -->
+                        <ellipse
+                            cx="500"
+                            cy="350"
+                            rx="75"
+                            ry="45"
+                            fill="#080c13"
+                            stroke="rgba(0, 229, 255, 0.4)"
+                            stroke-width="1.5"
+                        />
+                        <text
+                            x="500"
+                            y="346"
+                            fill="#00e5ff"
+                            font-size="11"
+                            font-weight="bold"
+                            font-family="monospace"
+                            text-anchor="middle"
+                            letter-spacing="2"
+                        >
+                            PIT ALPHA DEEP
+                        </text>
+                        <text
+                            x="500"
+                            y="360"
+                            fill="rgba(255,255,255,0.5)"
+                            font-size="8.5"
+                            font-family="monospace"
+                            text-anchor="middle"
+                        >
+                            ELEV: -85m · SHOVEL-02
+                        </text>
+
+                        <!-- ========================================================
+                         REALISTIC MINE HAUL ROADS (GRAVEL/DIRT WITH SHOULDER BERMS)
+                         ======================================================== -->
+                        <!-- Road 1: North Incline / Ramp-01 (Pit Floor -> Pit Rim -> Crusher A) -->
+                        <!-- Outer Road Bed (Wide Gravel Haul Road) -->
+                        <path
+                            d="M 450,350 C 400,280 340,200 240,120 L 130,105"
+                            fill="none"
+                            stroke="#2c3644"
+                            stroke-width="32"
+                            stroke-linecap="round"
+                        />
+                        <!-- Inner Graded Surface -->
+                        <path
+                            d="M 450,350 C 400,280 340,200 240,120 L 130,105"
+                            fill="none"
+                            stroke="#3d495a"
+                            stroke-width="24"
+                            stroke-linecap="round"
+                        />
+                        <!-- Road Edge Shoulder Berms -->
+                        <path
+                            d="M 450,350 C 400,280 340,200 240,120 L 130,105"
+                            fill="none"
+                            stroke="rgba(255, 200, 100, 0.4)"
+                            stroke-width="1.5"
+                        />
+                        <!-- Road Centerline Dashes -->
+                        <path
+                            d="M 450,350 C 400,280 340,200 240,120 L 130,105"
+                            fill="none"
+                            stroke="rgba(255, 255, 255, 0.25)"
+                            stroke-width="1.2"
+                            stroke-dasharray="14,10"
+                        />
+                        <text
+                            x="280"
+                            y="155"
+                            fill="rgba(255,255,255,0.4)"
+                            font-size="8.5"
+                            font-family="monospace"
+                            transform="rotate(-35 280 155)"
+                        >
+                            RAMP-01 NORTH (8% GRADE)
+                        </text>
+
+                        <!-- Road 2: South Haul Arterial (Pit Bottom -> Bench 4 -> ROM Stockpile & Shovel 01) -->
+                        <path
+                            d="M 460,370 C 410,430 330,490 230,520 L 110,540"
+                            fill="none"
+                            stroke="#2c3644"
+                            stroke-width="32"
+                            stroke-linecap="round"
+                        />
+                        <path
+                            d="M 460,370 C 410,430 330,490 230,520 L 110,540"
+                            fill="none"
+                            stroke="#3d495a"
+                            stroke-width="24"
+                            stroke-linecap="round"
+                        />
+                        <path
+                            d="M 460,370 C 410,430 330,490 230,520 L 110,540"
+                            fill="none"
+                            stroke="rgba(255, 200, 100, 0.4)"
+                            stroke-width="1.5"
+                        />
+                        <path
+                            d="M 460,370 C 410,430 330,490 230,520 L 110,540"
+                            fill="none"
+                            stroke="rgba(255, 255, 255, 0.25)"
+                            stroke-width="1.2"
+                            stroke-dasharray="14,10"
+                        />
+                        <text
+                            x="270"
+                            y="490"
+                            fill="rgba(255,255,255,0.4)"
+                            font-size="8.5"
+                            font-family="monospace"
+                            transform="rotate(25 270 490)"
+                        >
+                            SOUTH HAUL ARTERIAL
+                        </text>
+
+                        <!-- Road 3: East Highwall Bypass (Pit Rim -> Crusher B / Rail Loadout) -->
+                        <path
+                            d="M 540,330 C 620,310 720,310 820,320 L 920,320"
+                            fill="none"
+                            stroke="#2c3644"
+                            stroke-width="30"
+                            stroke-linecap="round"
+                        />
+                        <path
+                            d="M 540,330 C 620,310 720,310 820,320 L 920,320"
+                            fill="none"
+                            stroke="#3d495a"
+                            stroke-width="22"
+                            stroke-linecap="round"
+                        />
+                        <path
+                            d="M 540,330 C 620,310 720,310 820,320 L 920,320"
+                            fill="none"
+                            stroke="rgba(255, 200, 100, 0.4)"
+                            stroke-width="1.5"
+                        />
+                        <path
+                            d="M 540,330 C 620,310 720,310 820,320 L 920,320"
+                            fill="none"
+                            stroke="rgba(255, 255, 255, 0.25)"
+                            stroke-width="1.2"
+                            stroke-dasharray="14,10"
+                        />
+                        <text x="700" y="300" fill="rgba(255,255,255,0.4)" font-size="8.5" font-family="monospace">
+                            EAST BYPASS TO CRUSHER B
+                        </text>
+
+                        <!-- Road 4: South-East Overburden Waste Dump Haul -->
+                        <path
+                            d="M 540,370 C 620,440 710,510 810,560 L 920,570"
+                            fill="none"
+                            stroke="#2c3644"
+                            stroke-width="28"
+                            stroke-linecap="round"
+                        />
+                        <path
+                            d="M 540,370 C 620,440 710,510 810,560 L 920,570"
+                            fill="none"
+                            stroke="#3d495a"
+                            stroke-width="20"
+                            stroke-linecap="round"
+                        />
+                        <path
+                            d="M 540,370 C 620,440 710,510 810,560 L 920,570"
+                            fill="none"
+                            stroke="rgba(255, 200, 100, 0.4)"
+                            stroke-width="1.5"
+                        />
+                        <path
+                            d="M 540,370 C 620,440 710,510 810,560 L 920,570"
+                            fill="none"
+                            stroke="rgba(255, 255, 255, 0.25)"
+                            stroke-width="1.2"
+                            stroke-dasharray="14,10"
+                        />
+                        <text
+                            x="700"
+                            y="475"
+                            fill="rgba(255,255,255,0.4)"
+                            font-size="8.5"
+                            font-family="monospace"
+                            transform="rotate(35 700 475)"
+                        >
+                            WASTE DUMP ACCESS ROAD
+                        </text>
+
+                        <!-- Bench Connecting Internal Spiral Loop -->
+                        <path
+                            d="M 450,350 C 480,270 560,260 620,300 C 660,340 640,430 580,450 C 520,470 470,430 460,370"
+                            fill="none"
+                            stroke="#333f50"
+                            stroke-width="16"
+                            stroke-linecap="round"
+                        />
+                        <path
+                            d="M 450,350 C 480,270 560,260 620,300 C 660,340 640,430 580,450 C 520,470 470,430 460,370"
+                            fill="none"
+                            stroke="rgba(255,255,255,0.15)"
+                            stroke-width="1"
+                            stroke-dasharray="8,6"
+                        />
+
+                        <!-- Rockfall Hazard Marker on Ramp-01 (In front of T-017) -->
+                        <g transform="translate(375, 225)">
+                            <polygon
+                                points="0,-12 12,10 -12,10"
+                                fill="rgba(255, 23, 68, 0.2)"
+                                stroke="#ff1744"
+                                stroke-width="2"
+                            />
+                            <text
+                                x="0"
+                                y="7"
+                                fill="#ff1744"
+                                font-size="11"
+                                font-weight="bold"
+                                font-family="monospace"
+                                text-anchor="middle"
+                            >
+                                !
+                            </text>
+                            <text
+                                x="0"
+                                y="24"
+                                fill="#ff1744"
+                                font-size="8"
+                                font-family="monospace"
+                                font-weight="bold"
+                                text-anchor="middle"
+                            >
+                                ROCKFALL HAZARD
+                            </text>
+                        </g>
+
+                        <!-- ========================================================
+                         MINE FACILITIES & INFRASTRUCTURE SITES
+                         ======================================================== -->
+                        <!-- 1. PRIMARY CRUSHER A (Top-Left) -->
+                        <g transform="translate(60, 65)">
+                            <rect
+                                width="110"
+                                height="65"
+                                rx="6"
+                                fill="rgba(15, 23, 38, 0.9)"
+                                stroke="#00e5ff"
+                                stroke-width="1.8"
+                            />
+                            <rect
+                                x="8"
+                                y="8"
+                                width="30"
+                                height="48"
+                                rx="4"
+                                fill="#1e293b"
+                                stroke="rgba(0, 229, 255, 0.4)"
+                            />
+                            <circle cx="23" cy="32" r="9" fill="#0284c7" />
+                            <text
+                                x="50"
+                                y="24"
+                                fill="#00e5ff"
+                                font-size="9.5"
+                                font-weight="bold"
+                                font-family="monospace"
+                            >
+                                PRIMARY
+                            </text>
+                            <text x="50" y="36" fill="#ffffff" font-size="9" font-weight="bold" font-family="monospace">
+                                CRUSHER A
+                            </text>
+                            <text x="50" y="52" fill="#00fa9a" font-size="8" font-family="monospace">
+                                CAP: 1200 t/h
+                            </text>
+                            <!-- Discharge Conveyor Line -->
+                            <line
+                                x1="110"
+                                y1="35"
+                                x2="160"
+                                y2="35"
+                                stroke="#00e5ff"
+                                stroke-width="4"
+                                stroke-dasharray="6,4"
+                            />
+                        </g>
+
+                        <!-- 2. RUN-OF-MINE (ROM) STOCKPILE & SHOVEL 01 (Bottom-Left) -->
+                        <g transform="translate(45, 510)">
+                            <rect
+                                width="120"
+                                height="60"
+                                rx="6"
+                                fill="rgba(15, 23, 38, 0.9)"
+                                stroke="#00fa9a"
+                                stroke-width="1.8"
+                            />
+                            <text
+                                x="60"
+                                y="22"
+                                fill="#00fa9a"
+                                font-size="9.5"
+                                font-weight="bold"
+                                font-family="monospace"
+                                text-anchor="middle"
+                            >
+                                ROM STOCKPILE
+                            </text>
+                            <text
+                                x="60"
+                                y="36"
+                                fill="#ffffff"
+                                font-size="8.5"
+                                font-family="monospace"
+                                text-anchor="middle"
+                            >
+                                SHOVEL 01 (BEML BE1800D)
+                            </text>
+                            <text
+                                x="60"
+                                y="49"
+                                fill="rgba(255,255,255,0.5)"
+                                font-size="8"
+                                font-family="monospace"
+                                text-anchor="middle"
+                            >
+                                ACTIVE LOADING
+                            </text>
+                        </g>
+
+                        <!-- 3. SECONDARY CRUSHER B / SIZER (Top-Right) -->
+                        <g transform="translate(860, 275)">
+                            <rect
+                                width="115"
+                                height="65"
+                                rx="6"
+                                fill="rgba(15, 23, 38, 0.9)"
+                                stroke="#00e5ff"
+                                stroke-width="1.8"
+                            />
+                            <text
+                                x="57"
+                                y="24"
+                                fill="#00e5ff"
+                                font-size="9.5"
+                                font-weight="bold"
+                                font-family="monospace"
+                                text-anchor="middle"
+                            >
+                                SECONDARY
+                            </text>
+                            <text
+                                x="57"
+                                y="38"
+                                fill="#ffffff"
+                                font-size="9"
+                                font-weight="bold"
+                                font-family="monospace"
+                                text-anchor="middle"
+                            >
+                                CRUSHER B
+                            </text>
+                            <text
+                                x="57"
+                                y="52"
+                                fill="#00fa9a"
+                                font-size="8"
+                                font-family="monospace"
+                                text-anchor="middle"
+                            >
+                                ONLINE · 850 t/h
+                            </text>
+                        </g>
+
+                        <!-- 4. OVERBURDEN WASTE ROCK DUMP (Bottom-Right) -->
+                        <g transform="translate(855, 545)">
+                            <rect
+                                width="120"
+                                height="55"
+                                rx="6"
+                                fill="rgba(15, 23, 38, 0.9)"
+                                stroke="#ffaa00"
+                                stroke-width="1.8"
+                            />
+                            <text
+                                x="60"
+                                y="24"
+                                fill="#ffaa00"
+                                font-size="9.5"
+                                font-weight="bold"
+                                font-family="monospace"
+                                text-anchor="middle"
+                            >
+                                NORTH WASTE DUMP
+                            </text>
+                            <text
+                                x="60"
+                                y="38"
+                                fill="#ffffff"
+                                font-size="8.5"
+                                font-family="monospace"
+                                text-anchor="middle"
+                            >
+                                OVERBURDEN TIER 3
+                            </text>
+                        </g>
+
+                        <!-- 5. FLEET GPS DISPATCH BASE STATION (Center-North) -->
+                        <g transform="translate(500, 75)">
+                            <circle
+                                cx="0"
+                                cy="0"
+                                r="14"
+                                fill="rgba(14, 22, 36, 0.9)"
+                                stroke="#00e5ff"
+                                stroke-width="1.5"
+                            />
+                            <polygon points="0,-9 6,6 -6,6" fill="#00e5ff" />
+                            <text
+                                x="0"
+                                y="24"
+                                fill="rgba(255,255,255,0.7)"
+                                font-size="8"
+                                font-family="monospace"
+                                text-anchor="middle"
+                            >
+                                DISPATCH TOWER // BASE-01
+                            </text>
+                        </g>
+
+                        <!-- ========================================================
+                         ATMOSPHERIC FOG DENSITY HEATMAP LAYER
+                         ======================================================== -->
+                        <g
+                            id="fog-heatmap-layer"
+                            opacity="1"
+                            style="transition: opacity 0.4s ease; pointer-events: none"
+                        >
+                            <!-- Thick Fog Pocket over Deep Pit Basin -->
+                            <ellipse cx="480" cy="360" rx="160" ry="110" fill="url(#fogClusterPit)" />
+                            <!-- Dense Fog Wave over South Haul Valley -->
+                            <ellipse cx="280" cy="520" rx="130" ry="85" fill="url(#fogClusterSouth)" />
+                            <!-- Caution Fog Labels -->
+                            <rect x="420" y="385" width="130" height="18" rx="4" fill="rgba(255, 23, 68, 0.85)" />
+                            <text
+                                x="485"
+                                y="397"
+                                fill="#ffffff"
+                                font-size="8"
+                                font-weight="bold"
+                                font-family="monospace"
+                                text-anchor="middle"
+                            >
+                                ⚠ DENSE FOG // VIS &lt; 45m
+                            </text>
+                        </g>
+                    </svg>
+
+                    <!-- ========================================================
+                     TRUCK FLEET ICONS — STRICTLY POSITIONED ON ROADS!
+                     (Using calculated percentage coords matching the SVG paths)
+                     ======================================================== -->
+
+                    <!-- 1. TRUCK T-017 [CRITICAL]: On Ramp-01 North at x=400, y=260 -> 40%, 37.1% -->
+                    <div class="map-truck-node critical" style="left: 40%; top: 37%" data-unit="T-017">
+                        <div class="truck-halo"></div>
+                        <svg class="truck-svg-icon" viewBox="0 0 30 30">
+                            <rect
+                                x="6"
+                                y="3"
+                                width="18"
+                                height="24"
+                                rx="3"
+                                fill="#f59e0b"
+                                stroke="#ffffff"
+                                stroke-width="1.5"
+                            />
+                            <rect x="8" y="4" width="14" height="8" rx="2" fill="#d97706" />
+                            <rect x="9" y="5" width="12" height="4" rx="1" fill="#ff1744" />
+                        </svg>
+                        <div class="truck-tag-pill">T-017 [CRITICAL]</div>
+                        <!-- Telemetry Tooltip -->
+                        <div class="map-truck-tooltip">
+                            <div class="tt-header">
+                                <span>UNIT: T-017 (BEML BH205E)</span>
+                                <span class="tt-badge critical">CRITICAL</span>
+                            </div>
+                            SPEED: 0.0 km/h (HALTED)<br />
+                            LOCATION: Ramp-01 Bench 4<br />
+                            SENSOR VIS: 42m (Dense Fog)<br />
+                            PAYLOAD: 95 Tonnes (Iron Ore - Hematite)<br />
+                            <span style="color: var(--accent-red); font-weight: 700"
+                                >⚠ OBSTACLE IMMINENT // AUTO-BRAKE ACTIVE</span
+                            >
+                        </div>
+                    </div>
+
+                    <!-- 2. TRUCK T-023 [CAUTION]: On South Haul at x=230, y=520 -> 23%, 74.3% -->
+                    <div class="map-truck-node caution" style="left: 23%; top: 74.3%" data-unit="T-023">
+                        <div class="truck-halo"></div>
+                        <svg class="truck-svg-icon" viewBox="0 0 30 30">
+                            <rect
+                                x="6"
+                                y="3"
+                                width="18"
+                                height="24"
+                                rx="3"
+                                fill="#f59e0b"
+                                stroke="#ffffff"
+                                stroke-width="1.2"
+                            />
+                            <rect x="8" y="4" width="14" height="8" rx="2" fill="#d97706" />
+                            <rect x="9" y="5" width="12" height="4" rx="1" fill="#ffaa00" />
+                        </svg>
+                        <div class="truck-tag-pill">T-023 [CAUTION]</div>
+                        <div class="map-truck-tooltip">
+                            <div class="tt-header">
+                                <span>UNIT: T-023 (BEML BH205E)</span>
+                                <span class="tt-badge caution">CAUTION</span>
+                            </div>
+                            SPEED: 8.5 km/h (REDUCED)<br />
+                            LOCATION: South Haul Arterial<br />
+                            SENSOR VIS: 55m (Fog Advisory)<br />
+                            PAYLOAD: 190 Tonnes<br />
+                            <span style="color: var(--accent-amber)">DEHAZE AI ENGINE ENGAGED</span>
+                        </div>
+                    </div>
+
+                    <!-- 3. TRUCK T-011 [NOMINAL]: On Ramp-01 approaching Crusher A at x=200, y=115 -> 20%, 16.4% -->
+                    <div class="map-truck-node" style="left: 20%; top: 16.4%" data-unit="T-011">
+                        <div class="truck-halo"></div>
+                        <svg class="truck-svg-icon" viewBox="0 0 30 30">
+                            <rect
+                                x="6"
+                                y="3"
+                                width="18"
+                                height="24"
+                                rx="3"
+                                fill="#f59e0b"
+                                stroke="#00fa9a"
+                                stroke-width="1.2"
+                            />
+                            <rect x="8" y="4" width="14" height="8" rx="2" fill="#d97706" />
+                            <rect x="9" y="5" width="12" height="4" rx="1" fill="#38bdf8" />
+                        </svg>
+                        <div class="truck-tag-pill">T-011</div>
+                        <div class="map-truck-tooltip">
+                            <div class="tt-header">
+                                <span>UNIT: T-011 (BEML BH205E)</span>
+                                <span class="tt-badge nominal">NOMINAL</span>
+                            </div>
+                            SPEED: 14.2 km/h<br />
+                            LOCATION: Approaching Crusher A<br />
+                            SENSOR VIS: 140m<br />
+                            PAYLOAD: 205 Tonnes (Delivering)
+                        </div>
+                    </div>
+
+                    <!-- 4. TRUCK T-004 [NOMINAL]: On East Bypass at x=780, y=320 -> 78%, 45.7% -->
+                    <div class="map-truck-node" style="left: 78%; top: 45.7%" data-unit="T-004">
+                        <div class="truck-halo"></div>
+                        <svg class="truck-svg-icon" viewBox="0 0 30 30">
+                            <rect
+                                x="6"
+                                y="3"
+                                width="18"
+                                height="24"
+                                rx="3"
+                                fill="#f59e0b"
+                                stroke="#00fa9a"
+                                stroke-width="1.2"
+                            />
+                            <rect x="8" y="4" width="14" height="8" rx="2" fill="#d97706" />
+                            <rect x="9" y="5" width="12" height="4" rx="1" fill="#38bdf8" />
+                        </svg>
+                        <div class="truck-tag-pill">T-004</div>
+                        <div class="map-truck-tooltip">
+                            <div class="tt-header">
+                                <span>UNIT: T-004 (BEML BH205E)</span>
+                                <span class="tt-badge nominal">NOMINAL</span>
+                            </div>
+                            SPEED: 16.0 km/h<br />
+                            LOCATION: East Bypass Corridor<br />
+                            SENSOR VIS: 195m<br />
+                            PAYLOAD: 0 Tonnes (Empty Haul)
+                        </div>
+                    </div>
+
+                    <!-- 5. TRUCK T-009 [NOMINAL]: On Waste Dump Road at x=830, y=565 -> 83%, 80.7% -->
+                    <div class="map-truck-node" style="left: 83%; top: 80.7%" data-unit="T-009">
+                        <div class="truck-halo"></div>
+                        <svg class="truck-svg-icon" viewBox="0 0 30 30">
+                            <rect
+                                x="6"
+                                y="3"
+                                width="18"
+                                height="24"
+                                rx="3"
+                                fill="#f59e0b"
+                                stroke="#00fa9a"
+                                stroke-width="1.2"
+                            />
+                            <rect x="8" y="4" width="14" height="8" rx="2" fill="#d97706" />
+                            <rect x="9" y="5" width="12" height="4" rx="1" fill="#38bdf8" />
+                        </svg>
+                        <div class="truck-tag-pill">T-009</div>
+                        <div class="map-truck-tooltip">
+                            <div class="tt-header">
+                                <span>UNIT: T-009 (BEML BH205E)</span>
+                                <span class="tt-badge nominal">NOMINAL</span>
+                            </div>
+                            SPEED: 0.0 km/h (Unloading)<br />
+                            LOCATION: North Waste Rock Dump<br />
+                            SENSOR VIS: 180m<br />
+                            PAYLOAD: 180 Tonnes Overburden
+                        </div>
+                    </div>
+
+                    <!-- 6. TRUCK T-032 [NOMINAL]: Descending Pit North Incline at x=580, y=320 -> 58%, 45.7% -->
+                    <div class="map-truck-node" style="left: 58%; top: 45.7%" data-unit="T-032">
+                        <div class="truck-halo"></div>
+                        <svg class="truck-svg-icon" viewBox="0 0 30 30">
+                            <rect
+                                x="6"
+                                y="3"
+                                width="18"
+                                height="24"
+                                rx="3"
+                                fill="#f59e0b"
+                                stroke="#00fa9a"
+                                stroke-width="1.2"
+                            />
+                            <rect x="8" y="4" width="14" height="8" rx="2" fill="#d97706" />
+                            <rect x="9" y="5" width="12" height="4" rx="1" fill="#38bdf8" />
+                        </svg>
+                        <div class="truck-tag-pill">T-032</div>
+                        <div class="map-truck-tooltip">
+                            <div class="tt-header">
+                                <span>UNIT: T-032 (BEML BH205E)</span>
+                                <span class="tt-badge nominal">NOMINAL</span>
+                            </div>
+                            SPEED: 13.5 km/h<br />
+                            LOCATION: Bench 3 Incline<br />
+                            SENSOR VIS: 110m<br />
+                            PAYLOAD: 0 Tonnes (Routing to Shovel 02)
+                        </div>
+                    </div>
+
+                    <!-- Map Legend Overlay in Footer -->
+                    <div class="map-footer-legend">
+                        <div class="leg-item">
+                            <div
+                                class="leg-dot"
+                                style="background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green)"
+                            ></div>
+                            Nominal Haul
+                        </div>
+                        <div class="leg-item">
+                            <div
+                                class="leg-dot"
+                                style="background: var(--accent-amber); box-shadow: 0 0 6px var(--accent-amber)"
+                            ></div>
+                            Caution (Fog / Reduced Spd)
+                        </div>
+                        <div class="leg-item">
+                            <div
+                                class="leg-dot"
+                                style="background: var(--accent-red); box-shadow: 0 0 8px var(--accent-red)"
+                            ></div>
+                            Critical (Auto-Braking)
+                        </div>
+                        <div class="leg-item" style="color: var(--accent-primary)">
+                            <span style="font-weight: bold">◈</span> All Units On-Road GPS Synced
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ========================================================
+                 RIGHT SIDEBAR: FLEET TELEMETRY & TERMINAL LOGS
+                 ======================================================== -->
+                <div class="side-panel">
+                    <!-- Fleet Summary Metric Cards -->
+                    <div class="stats-row">
+                        <div class="stat-box">
+                            <div class="val">06 / 06</div>
+                            <div class="label">FLEET ONLINE</div>
+                        </div>
+                        <div class="stat-box">
+                            <div
+                                class="val"
+                                style="color: var(--accent-amber); text-shadow: 0 0 10px var(--accent-amber-glow)"
+                            >
+                                42m
+                            </div>
+                            <div class="label">MIN VISIBILITY</div>
+                        </div>
+                        <div class="stat-box">
+                            <div
+                                class="val"
+                                style="color: var(--accent-red); text-shadow: 0 0 10px var(--accent-red-glow)"
+                            >
+                                01
+                            </div>
+                            <div class="label">CRITICAL STOP</div>
+                        </div>
+                    </div>
+
+                    <!-- Selected Truck Telemetry Card (Interactive Inspector) -->
+                    <div class="unit-telemetry-card" id="active-truck-card">
+                        <div
+                            style="
+                                display: flex;
+                                justify-content: space-between;
+                                align-items: center;
+                                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                                padding-bottom: 6px;
+                            "
+                        >
+                            <span style="font-weight: 800; color: #ffffff; font-size: 12px" id="insp-unit-id"
+                                >UNIT: T-017 (BEML BH205E)</span
+                            >
+                            <span class="badge critical" id="insp-status-badge">CRITICAL</span>
+                        </div>
+                        <div class="telemetry-row">
+                            <span>HEMM MODEL</span
+                            ><span style="color: var(--accent-primary); font-weight: 700">BEML BH100 [100T]</span>
+                        </div>
+                        <div class="telemetry-row">
+                            <span>LOCATION</span><span id="insp-loc">Ramp-01 Bench 4 (-45m)</span>
+                        </div>
+                        <div class="telemetry-row">
+                            <span>HAUL SPEED</span
+                            ><span id="insp-speed" style="color: var(--accent-red)">0.0 km/h (LOCKED)</span>
+                        </div>
+                        <div class="telemetry-row">
+                            <span>PAYLOAD</span><span id="insp-payload">95 Tonnes (Iron Ore - Hematite)</span>
+                        </div>
+                        <div class="telemetry-row">
+                            <span>LOCAL VISIBILITY</span
+                            ><span id="insp-vis" style="color: var(--accent-amber)">42m (Dense Fog)</span>
+                        </div>
+                        <div class="telemetry-row">
+                            <span>PROX HAZARD</span
+                            ><span id="insp-hazard" style="color: var(--accent-red)">Rockfall Obstacle @ 18.2m</span>
+                        </div>
+                    </div>
+
+                    <!-- Live In-Cab Video Monitor (Optical Telemetry Stream) -->
+                    <div
+                        class="unit-video-card"
+                        style="
+                            background: #070b12;
+                            border: 1px solid var(--border-color);
+                            border-radius: 10px;
+                            overflow: hidden;
+                            position: relative;
+                            margin-bottom: 2px;
+                        "
+                    >
+                        <div
+                            style="
+                                padding: 6px 12px;
+                                background: rgba(8, 14, 24, 0.92);
+                                display: flex;
+                                justify-content: space-between;
+                                align-items: center;
+                                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+                            "
+                        >
+                            <span
+                                style="
+                                    font-size: 10px;
+                                    font-weight: 800;
+                                    font-family: var(--font-mono);
+                                    color: #00fa9a;
+                                    display: flex;
+                                    align-items: center;
+                                    gap: 6px;
+                                "
+                            >
+                                <span
+                                    style="
+                                        width: 6px;
+                                        height: 6px;
+                                        border-radius: 50%;
+                                        background: #00fa9a;
+                                        box-shadow: 0 0 6px #00fa9a;
+                                        display: inline-block;
+                                    "
+                                ></span>
+                                LIVE CABIN FEED // <span id="crt-video-unit">T-017 (BEML BH100)</span>
+                            </span>
+                            <button
+                                id="crt-video-toggle-btn"
+                                class="map-btn"
+                                style="padding: 3px 8px; font-size: 9px; cursor: pointer"
+                            >
+                                ☀ AI DEHAZE: <span id="crt-dehaze-state">ON</span>
+                            </button>
+                        </div>
+                        <div style="position: relative; height: 148px; background: #02050a; overflow: hidden">
+                            <video
+                                id="crt-video-dehazed"
+                                class="feed-media-video video-dehazed"
+                                src="videos/front camers dehaze.mp4"
+                                autoplay
+                                loop
+                                muted
+                                playsinline
+                                style="
+                                    position: absolute;
+                                    inset: 0;
+                                    width: 100%;
+                                    height: 100%;
+                                    object-fit: cover;
+                                    transition: opacity 0.3s ease;
+                                "
+                            >
+                                <source src="videos/front camers dehaze.mp4" type="video/mp4" />
+                            </video>
+                            <video
+                                id="crt-video-hazed"
+                                class="feed-media-video video-hazed"
+                                src="videos/front camers haze.mp4"
+                                autoplay
+                                loop
+                                muted
+                                playsinline
+                                style="
+                                    position: absolute;
+                                    inset: 0;
+                                    width: 100%;
+                                    height: 100%;
+                                    object-fit: cover;
+                                    opacity: 0;
+                                    transition: opacity 0.3s ease;
+                                "
+                            >
+                                <source src="videos/front camers haze.mp4" type="video/mp4" />
+                            </video>
+                            <div class="cam-scanlines"></div>
+                            <div class="hud-bracket tl" style="top: 6px; left: 6px; width: 12px; height: 12px"></div>
+                            <div class="hud-bracket tr" style="top: 6px; right: 6px; width: 12px; height: 12px"></div>
+                            <div class="hud-bracket bl" style="bottom: 6px; left: 6px; width: 12px; height: 12px"></div>
+                            <div
+                                class="hud-bracket br"
+                                style="bottom: 6px; right: 6px; width: 12px; height: 12px"
+                            ></div>
+                            <div
+                                style="
+                                    position: absolute;
+                                    bottom: 6px;
+                                    left: 8px;
+                                    font-family: var(--font-mono);
+                                    font-size: 8.5px;
+                                    color: rgba(255, 255, 255, 0.85);
+                                    background: rgba(0, 0, 0, 0.65);
+                                    padding: 2px 6px;
+                                    border-radius: 3px;
+                                    z-index: 6;
+                                "
+                            >
+                                C-V2X PC5 TELEMETRY RELAY
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Live Terminal System Event Logs -->
+                    <div class="list-panel" style="flex: 1.1">
+                        <div class="list-header">▶ TERMINAL // FLEET SAFETY LOGS</div>
+                        <div class="list-content" id="alerts-feed-content">
+                            <div class="alert-item critical">
+                                <div class="alert-time">19:24:12</div>
+                                <div>[CRIT] T-017 (BEML BH205E): OBSTACLE_DETECTED // AUTO_BRAKING_LOCKED</div>
+                            </div>
+                            <div class="alert-item caution">
+                                <div class="alert-time">19:23:45</div>
+                                <div>[WARN] T-023 (BEML BH205E): ENTERING_DENSE_FOG_ZONE // VIS: 55m</div>
+                            </div>
+                            <div class="alert-item">
+                                <div class="alert-time">19:22:18</div>
+                                <div>[INFO] T-011 (BEML BH205E): ARRIVED_CRUSHER_A // DISCHARGING_ORE</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Active Fleet Units List -->
+                    <div class="list-panel" style="flex: 1.3">
+                        <div class="list-header">▶ BEML UNIT ROSTER // NMDC DEPOSIT 11</div>
+                        <div class="list-content">
+                            <div class="truck-list-item" style="cursor: pointer" onclick="inspectTruck('T-017')">
+                                <div>
+                                    <span style="color: #fff; font-weight: 800">T-017</span>
+                                    <span style="color: var(--text-muted)">// BEML 205T</span>
+                                </div>
+                                <div style="text-align: right; line-height: 1.6">
+                                    0.0 km/h<br /><span class="badge critical">CRITICAL</span>
+                                </div>
+                            </div>
+                            <div class="truck-list-item" style="cursor: pointer" onclick="inspectTruck('T-023')">
+                                <div>
+                                    <span style="color: #fff; font-weight: 800">T-023</span>
+                                    <span style="color: var(--text-muted)">// BEML 205T</span>
+                                </div>
+                                <div style="text-align: right; line-height: 1.6">
+                                    8.5 km/h<br /><span class="badge caution">CAUTION</span>
+                                </div>
+                            </div>
+                            <div class="truck-list-item" style="cursor: pointer" onclick="inspectTruck('T-011')">
+                                <div>
+                                    <span style="color: #fff; font-weight: 800">T-011</span>
+                                    <span style="color: var(--text-muted)">// BEML 205T</span>
+                                </div>
+                                <div style="text-align: right; line-height: 1.6">
+                                    14.2 km/h<br /><span class="badge normal">NOMINAL</span>
+                                </div>
+                            </div>
+                            <div class="truck-list-item" style="cursor: pointer" onclick="inspectTruck('T-004')">
+                                <div>
+                                    <span style="color: #fff; font-weight: 800">T-004</span>
+                                    <span style="color: var(--text-muted)">// BEML 205T</span>
+                                </div>
+                                <div style="text-align: right; line-height: 1.6">
+                                    16.0 km/h<br /><span class="badge normal">NOMINAL</span>
+                                </div>
+                            </div>
+                            <div class="truck-list-item" style="cursor: pointer" onclick="inspectTruck('T-009')">
+                                <div>
+                                    <span style="color: #fff; font-weight: 800">T-009</span>
+                                    <span style="color: var(--text-muted)">// BEML 205T</span>
+                                </div>
+                                <div style="text-align: right; line-height: 1.6">
+                                    0.0 km/h<br /><span class="badge normal">UNLOAD</span>
+                                </div>
+                            </div>
+                            <div class="truck-list-item" style="cursor: pointer" onclick="inspectTruck('T-032')">
+                                <div>
+                                    <span style="color: #fff; font-weight: 800">T-032</span>
+                                    <span style="color: var(--text-muted)">// BEML 205T</span>
+                                </div>
+                                <div style="text-align: right; line-height: 1.6">
+                                    13.5 km/h<br /><span class="badge normal">NOMINAL</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- /side-panel -->
+            </div>
+        </main>
+
+        <!-- Global Footer -->
+        <footer class="footer">
+            <div>
+                SYS_TIME: <span id="current-time">00:00:00</span> &nbsp;|&nbsp; FLEET TELEMETRY NETWORK:
+                <span class="sys-ok">C-V2X PC5 DIRECT (5.9 GHz) + RSU GATEWAY // LATENCY &lt; 10ms</span>
+            </div>
+            <div>SAMVEDAN COMMAND // NMDC BAILADILA COMPLEX // TEAM TERRASENSE (SIH26007)</div>
+        </footer>
+
+        <!-- Scripts -->
+        <script src="script.js"></script>
+        <script>
+            // Interactive truck inspector with BEML HEMMs
+            const truckData = {
+                'T-017': {
+                    loc: 'Ramp-01 Bench 4 (-45m)',
+                    spd: '0.0 km/h (LOCKED)',
+                    payload: '95 Tonnes (Iron Ore - Hematite)',
+                    vis: '42m (Dense Fog)',
+                    hazard: 'Rockfall Obstacle @ 18.2m',
+                    status: 'CRITICAL',
+                    badgeCls: 'badge critical'
+                },
+                'T-023': {
+                    loc: 'South Haul Arterial',
+                    spd: '8.5 km/h',
+                    payload: '190 Tonnes',
+                    vis: '55m (Fog Advisory)',
+                    hazard: 'None (Safe Buffer 85m)',
+                    status: 'CAUTION',
+                    badgeCls: 'badge caution'
+                },
+                'T-011': {
+                    loc: 'Approaching Crusher A',
+                    spd: '14.2 km/h',
+                    payload: '205 Tonnes (Delivering)',
+                    vis: '140m (Clear)',
+                    hazard: 'None',
+                    status: 'NOMINAL',
+                    badgeCls: 'badge normal'
+                },
+                'T-004': {
+                    loc: 'East Bypass Corridor',
+                    spd: '16.0 km/h',
+                    payload: '0 Tonnes (Empty)',
+                    vis: '195m (Clear)',
+                    hazard: 'None',
+                    status: 'NOMINAL',
+                    badgeCls: 'badge normal'
+                },
+                'T-009': {
+                    loc: 'North Waste Dump Tier 3',
+                    spd: '0.0 km/h (Unloading)',
+                    payload: '180 Tonnes Overburden',
+                    vis: '180m',
+                    hazard: 'None',
+                    status: 'UNLOAD',
+                    badgeCls: 'badge normal'
+                },
+                'T-032': {
+                    loc: 'Bench 3 Incline',
+                    spd: '13.5 km/h',
+                    payload: '0 Tonnes (Routing)',
+                    vis: '110m',
+                    hazard: 'None',
+                    status: 'NOMINAL',
+                    badgeCls: 'badge normal'
+                }
+            };
+
+            function inspectTruck(id) {
+                const data = truckData[id];
+                if (!data) return;
+                document.getElementById('insp-unit-id').textContent = `UNIT: ${id} (BEML BH205E)`;
+                const badge = document.getElementById('insp-status-badge');
+                badge.className = data.badgeCls;
+                badge.textContent = data.status;
+                document.getElementById('insp-loc').textContent = data.loc;
+                document.getElementById('insp-speed').textContent = data.spd;
+                document.getElementById('insp-payload').textContent = data.payload;
+                document.getElementById('insp-vis').textContent = data.vis;
+                document.getElementById('insp-hazard').textContent = data.hazard;
+
+                const videoUnit = document.getElementById('crt-video-unit');
+                if (videoUnit) videoUnit.textContent = `${id} (BEML BH205E)`;
+            }
+
+            // Attach click to map truck nodes
+            document.querySelectorAll('.map-truck-node').forEach(node => {
+                node.addEventListener('click', () => {
+                    const unit = node.dataset.unit;
+                    if (unit) inspectTruck(unit);
+                });
+            });
+
+            // Toggle Fog Heatmap
+            const fogBtn = document.getElementById('toggle-fog-heatmap');
+            const fogLayer = document.getElementById('fog-heatmap-layer');
+            const fogStatus = document.getElementById('fog-toggle-status');
+            let fogVisible = true;
+
+            if (fogBtn && fogLayer) {
+                fogBtn.addEventListener('click', () => {
+                    fogVisible = !fogVisible;
+                    fogLayer.style.opacity = fogVisible ? '1' : '0';
+                    fogStatus.textContent = fogVisible ? 'ON' : 'OFF';
+                    fogBtn.classList.toggle('active', fogVisible);
+                });
+            }
+
+            // Control Room Live Video Dehaze Toggle
+            const crtToggleBtn = document.getElementById('crt-video-toggle-btn');
+            const crtDehazedVid = document.getElementById('crt-video-dehazed');
+            const crtHazedVid = document.getElementById('crt-video-hazed');
+            const crtDehazeState = document.getElementById('crt-dehaze-state');
+            let crtDehazeOn = true;
+
+            if (crtToggleBtn && crtDehazedVid && crtHazedVid) {
+                crtToggleBtn.addEventListener('click', () => {
+                    crtDehazeOn = !crtDehazeOn;
+                    crtDehazedVid.style.opacity = crtDehazeOn ? '1' : '0';
+                    crtHazedVid.style.opacity = crtDehazeOn ? '0' : '1';
+                    crtDehazeState.textContent = crtDehazeOn ? 'ON' : 'OFF';
+                    crtToggleBtn.classList.toggle('active', crtDehazeOn);
+                });
+            }
+        </script>
+
+        <!-- ========================================================
+         MEDIA / VIDEO PATH CONFIGURATION MODAL
+         ======================================================== -->
+        <div id="media-config-modal" class="media-modal-overlay">
+            <div class="media-modal-card">
+                <div class="media-modal-header">
+                    <div class="media-modal-title">
+                        <span style="color: var(--accent-primary)">⚙</span> VIDEO STREAM MANAGER // SAMVEDAN
+                    </div>
+                    <button id="btn-close-media-modal" class="lb-close-btn" style="padding: 4px 10px; font-size: 11px">
+                        ✕ CLOSE
+                    </button>
+                </div>
+
+                <div class="media-modal-body">
+                    <p
+                        style="
+                            font-size: 11.5px;
+                            color: rgba(255, 255, 255, 0.7);
+                            margin-bottom: 14px;
+                            line-height: 1.4;
+                        "
+                    >
+                        Configure or upload video files directly from here, or permanently set them in
+                        <code
+                            style="
+                                color: #00e5ff;
+                                background: rgba(0, 229, 255, 0.1);
+                                padding: 2px 6px;
+                                border-radius: 4px;
+                            "
+                            >config.js</code
+                        >.
+                    </p>
+
+                    <!-- Dehazed Video Row -->
+                    <div class="media-input-group">
+                        <label class="media-label">
+                            <span>☀ AI DEHAZED VIDEO STREAM</span>
+                            <span class="media-badge">PROCESSED FEED</span>
+                        </label>
+                        <div class="media-row">
+                            <input
+                                type="text"
+                                id="cfg-dehazed-input"
+                                class="media-text-input"
+                                placeholder="e.g. videos/front camers dehaze.mp4 or local path"
+                            />
+                            <label class="media-upload-btn">
+                                📁 UPLOAD / BROWSE...
+                                <input
+                                    type="file"
+                                    id="cfg-dehazed-file"
+                                    accept="video/mp4,video/*"
+                                    style="display: none"
+                                />
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Hazed Video Row -->
+                    <div class="media-input-group" style="margin-top: 14px">
+                        <label class="media-label">
+                            <span>🌫 RAW HAZED VIDEO STREAM</span>
+                            <span
+                                class="media-badge"
+                                style="
+                                    color: var(--accent-amber);
+                                    border-color: rgba(255, 170, 0, 0.3);
+                                    background: rgba(255, 170, 0, 0.1);
+                                "
+                                >RAW SENSOR</span
+                            >
+                        </label>
+                        <div class="media-row">
+                            <input
+                                type="text"
+                                id="cfg-hazed-input"
+                                class="media-text-input"
+                                placeholder="e.g. videos/front camers haze.mp4 or local path"
+                            />
+                            <label class="media-upload-btn">
+                                📁 UPLOAD / BROWSE...
+                                <input
+                                    type="file"
+                                    id="cfg-hazed-file"
+                                    accept="video/mp4,video/*"
+                                    style="display: none"
+                                />
+                            </label>
+                        </div>
+                    </div>
+
+                    <div id="media-status-msg" class="media-status-msg" style="display: none"></div>
+                </div>
+
+                <div class="media-modal-footer">
+                    <button id="btn-reset-media" class="media-btn-secondary">↺ RESET TO CONFIG.JS</button>
+                    <div style="display: flex; gap: 8px">
+                        <button id="btn-apply-media" class="media-btn-primary">✔ APPLY & LOAD STREAMS</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Configuration & Dynamic Media Binding Engine -->
+        <script src="config.js"></script>
+    </body>
+</html>

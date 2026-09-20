@@ -1,0 +1,1715 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>SAMVEDAN — Driver In-Cab HUD</title>
+        <link rel="stylesheet" href="style.css" />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap"
+            rel="stylesheet"
+        />
+        <style>
+            /* ========== DASHBOARD SPECIFIC OVERRIDES & STYLES ========== */
+            .camera-grid {
+                display: grid;
+                grid-template-columns: 1.25fr 0.95fr 1.25fr;
+                grid-template-rows: 1.45fr 1.2fr;
+                gap: 12px;
+                flex: 1;
+                min-height: 0;
+                padding: 0 4px;
+            }
+
+            /* Camera panel containers */
+            .cam-panel {
+                background: rgba(10, 16, 26, 0.75);
+                border: 1px solid var(--border-color);
+                border-radius: 12px;
+                position: relative;
+                overflow: hidden;
+                cursor: pointer;
+                transition:
+                    border-color 0.25s,
+                    box-shadow 0.25s,
+                    transform 0.2s;
+                min-height: 0;
+                user-select: none;
+            }
+            .cam-panel:hover {
+                border-color: var(--accent-primary);
+                box-shadow:
+                    0 0 24px var(--accent-primary-glow),
+                    inset 0 0 15px rgba(0, 229, 255, 0.12);
+                transform: translateY(-1px);
+            }
+
+            /* Camera feed container */
+            .feed-container {
+                position: absolute;
+                inset: 0;
+                overflow: hidden;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .feed-svg {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                display: block;
+            }
+
+            /* Dehaze dynamic filter states */
+            .feed-fog-layer {
+                transition: opacity 0.5s ease;
+                pointer-events: none;
+            }
+            .feed-ai-layer {
+                transition:
+                    opacity 0.4s ease,
+                    filter 0.4s ease;
+                pointer-events: none;
+            }
+            .dehaze-active .feed-fog-layer {
+                opacity: 0.08 !important;
+            }
+            .dehaze-active .feed-ai-layer {
+                opacity: 1 !important;
+            }
+            .dehaze-inactive .feed-fog-layer {
+                opacity: 0.95 !important;
+            }
+            .dehaze-inactive .feed-ai-layer {
+                opacity: 0.15 !important;
+            }
+
+            /* Scanlines & Vignette overlay */
+            .cam-scanlines {
+                position: absolute;
+                inset: 0;
+                pointer-events: none;
+                z-index: 4;
+                background: repeating-linear-gradient(
+                    0deg,
+                    transparent,
+                    transparent 2px,
+                    rgba(0, 0, 0, 0.08) 2px,
+                    rgba(0, 0, 0, 0.08) 4px
+                );
+            }
+            .cam-vignette {
+                position: absolute;
+                inset: 0;
+                pointer-events: none;
+                z-index: 5;
+                background: radial-gradient(ellipse at center, transparent 40%, rgba(0, 0, 0, 0.55) 100%);
+            }
+
+            /* HUD brackets & telemetry overlays */
+            .hud-bracket {
+                position: absolute;
+                width: 18px;
+                height: 18px;
+                border: 2px solid rgba(0, 229, 255, 0.5);
+                pointer-events: none;
+                z-index: 6;
+            }
+            .hud-bracket.tl {
+                top: 38px;
+                left: 10px;
+                border-right: none;
+                border-bottom: none;
+            }
+            .hud-bracket.tr {
+                top: 38px;
+                right: 10px;
+                border-left: none;
+                border-bottom: none;
+            }
+            .hud-bracket.bl {
+                bottom: 10px;
+                left: 10px;
+                border-right: none;
+                border-top: none;
+            }
+            .hud-bracket.br {
+                bottom: 10px;
+                right: 10px;
+                border-left: none;
+                border-top: none;
+            }
+
+            /* Camera Top Bar */
+            .cam-header {
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 34px;
+                background: linear-gradient(
+                    180deg,
+                    rgba(4, 8, 16, 0.92) 0%,
+                    rgba(4, 8, 16, 0.65) 75%,
+                    transparent 100%
+                );
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 0 12px;
+                z-index: 10;
+            }
+            .cam-title-group {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .cam-icon-dot {
+                width: 7px;
+                height: 7px;
+                border-radius: 50%;
+                background: var(--accent-green);
+                box-shadow: 0 0 8px var(--accent-green);
+                animation: pulse-dot 2s infinite;
+            }
+            @keyframes pulse-dot {
+                0%,
+                100% {
+                    opacity: 1;
+                    transform: scale(1);
+                }
+                50% {
+                    opacity: 0.5;
+                    transform: scale(0.85);
+                }
+            }
+            .cam-name-text {
+                font-size: 11px;
+                font-weight: 800;
+                letter-spacing: 1.5px;
+                color: #ffffff;
+                text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+            }
+            .cam-badge-res {
+                font-size: 9px;
+                font-family: var(--font-mono);
+                color: rgba(0, 229, 255, 0.85);
+                background: rgba(0, 229, 255, 0.12);
+                padding: 2px 6px;
+                border-radius: 4px;
+                border: 1px solid rgba(0, 229, 255, 0.25);
+            }
+            .cam-badge-raw {
+                font-size: 9px;
+                font-family: var(--font-mono);
+                color: #ffaa00;
+                background: rgba(255, 170, 0, 0.15);
+                padding: 2px 6px;
+                border-radius: 4px;
+                border: 1px solid rgba(255, 170, 0, 0.4);
+                font-weight: 700;
+            }
+
+            /* DEHAZE TOGGLE BUTTON */
+            .dehaze-pill-btn {
+                background: rgba(0, 250, 154, 0.18);
+                border: 1px solid var(--accent-green);
+                color: var(--accent-green);
+                font-family: var(--font-mono);
+                font-size: 9.5px;
+                font-weight: 800;
+                letter-spacing: 1px;
+                padding: 3px 10px;
+                border-radius: 20px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                gap: 5px;
+                box-shadow: 0 0 12px var(--accent-green-glow);
+                transition: all 0.25s ease;
+                z-index: 20;
+            }
+            .dehaze-pill-btn:hover {
+                background: var(--accent-green);
+                color: #000000;
+                box-shadow: 0 0 20px var(--accent-green);
+            }
+            .dehaze-pill-btn.is-off {
+                background: rgba(255, 255, 255, 0.08);
+                border-color: rgba(255, 255, 255, 0.25);
+                color: rgba(255, 255, 255, 0.6);
+                box-shadow: none;
+            }
+
+            /* Expand hint pill on hover */
+            .cam-expand-hint {
+                position: absolute;
+                bottom: 8px;
+                right: 10px;
+                font-size: 8.5px;
+                font-family: var(--font-mono);
+                color: rgba(255, 255, 255, 0.4);
+                background: rgba(0, 0, 0, 0.65);
+                padding: 2px 6px;
+                border-radius: 4px;
+                pointer-events: none;
+                z-index: 10;
+                opacity: 0;
+                transition: opacity 0.2s;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+            }
+            .cam-panel:hover .cam-expand-hint {
+                opacity: 1;
+            }
+
+            /* Speedometer Center Panel */
+            .speedo-card-center {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                position: relative;
+                background: radial-gradient(circle at 50% 50%, rgba(0, 160, 220, 0.15) 0%, rgba(6, 12, 22, 0.95) 75%);
+            }
+            .speedo-svg-wrap {
+                width: 100%;
+                height: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            /* Info Bar Cards (8 Modular Telemetry Cards) */
+            .info-bar {
+                display: grid;
+                grid-template-columns: repeat(8, 1fr);
+                gap: 8px;
+                margin-top: 10px;
+                flex-shrink: 0;
+            }
+            @media (max-width: 1450px) {
+                .info-bar {
+                    grid-template-columns: repeat(4, 1fr);
+                }
+            }
+            @media (max-width: 850px) {
+                .info-bar {
+                    grid-template-columns: repeat(2, 1fr);
+                }
+            }
+            .info-card {
+                background: rgba(8, 14, 26, 0.65);
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
+                border: 1px solid var(--border-color);
+                border-radius: 10px;
+                padding: 8px 10px;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+                min-height: 80px;
+                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+                transition:
+                    border-color 0.2s,
+                    box-shadow 0.2s;
+            }
+            .info-card:hover {
+                border-color: var(--border-highlight);
+                box-shadow: 0 4px 20px rgba(0, 229, 255, 0.2);
+            }
+            .ic-hdr {
+                font-size: 10px;
+                font-weight: 700;
+                letter-spacing: 1.5px;
+                color: var(--text-muted);
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+            .ic-val {
+                font-size: 18px;
+                font-weight: 800;
+                font-family: var(--font-mono);
+                color: #ffffff;
+                margin: 4px 0 2px 0;
+                display: flex;
+                align-items: baseline;
+                gap: 4px;
+            }
+            .ic-sub {
+                font-size: 9.5px;
+                font-family: var(--font-mono);
+                color: var(--text-muted);
+                line-height: 1.35;
+            }
+
+            /* Systems dot row */
+            .systems-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 3px 6px;
+                font-size: 9px;
+                font-family: var(--font-mono);
+                color: rgba(255, 255, 255, 0.85);
+                margin-top: 2px;
+            }
+            .sys-check {
+                display: flex;
+                align-items: center;
+                gap: 4px;
+            }
+            .sys-check::before {
+                content: '';
+                width: 5px;
+                height: 5px;
+                border-radius: 50%;
+                background: var(--accent-green);
+                box-shadow: 0 0 4px var(--accent-green-glow);
+                flex-shrink: 0;
+            }
+
+            /* Payload meter */
+            .payload-track {
+                width: 100%;
+                height: 5px;
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 3px;
+                overflow: hidden;
+                margin: 4px 0;
+            }
+            .payload-fill {
+                height: 100%;
+                width: 68%;
+                background: linear-gradient(90deg, var(--accent-primary), var(--accent-green));
+                border-radius: 3px;
+                box-shadow: 0 0 8px var(--accent-primary-glow);
+            }
+
+            /* ========== FULLSCREEN CAMERA LIGHTBOX ========== */
+            #cam-lightbox {
+                display: none;
+                position: fixed;
+                inset: 0;
+                z-index: 99990;
+                background: rgba(3, 6, 12, 0.92);
+                backdrop-filter: blur(25px);
+                -webkit-backdrop-filter: blur(25px);
+                justify-content: center;
+                align-items: center;
+                flex-direction: column;
+                gap: 12px;
+                animation: lbFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            }
+            #cam-lightbox.is-open {
+                display: flex;
+            }
+            @keyframes lbFadeIn {
+                from {
+                    opacity: 0;
+                    transform: scale(0.98);
+                }
+                to {
+                    opacity: 1;
+                    transform: scale(1);
+                }
+            }
+
+            .lb-modal-window {
+                width: min(94vw, 1380px);
+                height: min(84vh, 880px);
+                background: #060a12;
+                border: 1.5px solid var(--accent-primary);
+                border-radius: 14px;
+                position: relative;
+                overflow: hidden;
+                box-shadow:
+                    0 0 90px rgba(0, 229, 255, 0.35),
+                    0 30px 60px rgba(0, 0, 0, 0.85);
+                display: flex;
+                flex-direction: column;
+            }
+
+            .lb-modal-header {
+                height: 44px;
+                background: rgba(8, 14, 24, 0.95);
+                border-bottom: 1px solid var(--border-color);
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 0 18px;
+                z-index: 20;
+            }
+            .lb-header-title {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                font-size: 13px;
+                font-weight: 800;
+                letter-spacing: 2px;
+                color: #ffffff;
+            }
+            .lb-header-controls {
+                display: flex;
+                align-items: center;
+                gap: 14px;
+            }
+            .lb-close-btn {
+                background: rgba(255, 23, 68, 0.15);
+                border: 1px solid var(--accent-red);
+                color: #ffffff;
+                font-family: var(--font-mono);
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 1px;
+                padding: 5px 14px;
+                border-radius: 6px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                transition: all 0.2s;
+            }
+            .lb-close-btn:hover {
+                background: var(--accent-red);
+                box-shadow: 0 0 15px var(--accent-red-glow);
+            }
+
+            .lb-stage {
+                position: relative;
+                flex: 1;
+                min-height: 0;
+                overflow: hidden;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: #020408;
+            }
+            .lb-stage-feed {
+                width: 100%;
+                height: 100%;
+            }
+
+            /* Lightbox HUD telemetry overlay */
+            .lb-hud-overlay {
+                position: absolute;
+                inset: 0;
+                pointer-events: none;
+                z-index: 15;
+            }
+            .lb-crosshair {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                width: 60px;
+                height: 60px;
+                border: 1px dashed rgba(0, 229, 255, 0.4);
+                border-radius: 50%;
+            }
+            .lb-crosshair::before,
+            .lb-crosshair::after {
+                content: '';
+                position: absolute;
+                background: rgba(0, 229, 255, 0.7);
+            }
+            .lb-crosshair::before {
+                width: 14px;
+                height: 1.5px;
+                top: 29px;
+                left: -18px;
+            }
+            .lb-crosshair::after {
+                width: 14px;
+                height: 1.5px;
+                top: 29px;
+                right: -18px;
+            }
+
+            .lb-footer-hud {
+                position: absolute;
+                bottom: 12px;
+                left: 18px;
+                right: 18px;
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-end;
+                pointer-events: none;
+                z-index: 15;
+                font-family: var(--font-mono);
+                font-size: 11px;
+                color: rgba(255, 255, 255, 0.75);
+                text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+            }
+            .lb-footer-hud span {
+                color: var(--accent-primary);
+                font-weight: 700;
+            }
+            .lb-close-hint {
+                font-size: 11px;
+                font-family: var(--font-mono);
+                color: rgba(255, 255, 255, 0.4);
+            }
+        </style>
+    </head>
+    <body class="dashboard-view">
+        <!-- Global Top Navigation -->
+        <nav class="top-nav">
+            <div class="brand">
+                <!-- Official SAMVEDAN 3D Delta Logo Image -->
+                <img src="assets/logo.png" class="brand-logo-img" alt="SAMVEDAN Logo" />
+                <div class="brand-text-block">
+                    <div class="brand-main-title">SAMVEDAN <span class="brand-badge">BEML HEMM</span></div>
+                    <div class="brand-sub-title">IN-CAB DRIVER HUD // DARK CHANNEL PRIOR DEHAZE ACTIVE</div>
+                </div>
+            </div>
+            <div class="nav-right-actions">
+                <div class="toggle-container">
+                    <a href="index.html" class="toggle-btn active">DASHBOARD VIEW</a>
+                    <a href="control-room.html" class="toggle-btn">CONTROL ROOM VIEW</a>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <div class="camera-grid">
+                <!-- ========================================================
+                 ① TOP-LEFT: FRONT CAMERA (AI DEHAZED WITH REAL VIDEO)
+                 ======================================================== -->
+                <div
+                    class="cam-panel dehaze-active"
+                    id="panel-front-ai"
+                    data-cam="FRONT CAMERA — AI DEHAZED STREAM"
+                    title="Click to expand view"
+                >
+                    <!-- Camera Header -->
+                    <div class="cam-header">
+                        <div class="cam-title-group">
+                            <div class="cam-icon-dot"></div>
+                            <span class="cam-name-text">FRONT CAMERA</span>
+                            <span class="cam-badge-res">1080p · HDR</span>
+                        </div>
+                        <button class="dehaze-pill-btn" id="dehaze-toggle-btn" title="Toggle AI Dehazing Engine">
+                            ☀ AI DEHAZE: <span id="dehaze-state-text">ON</span>
+                        </button>
+                    </div>
+
+                    <!-- Feed Viewport with Real Video Streams -->
+                    <div class="feed-container">
+                        <!-- 1. AI Dehazed Video Stream (Looping MP4) -->
+                        <video
+                            id="video-front-dehazed"
+                            class="feed-media-video video-dehazed"
+                            src="videos/front camers dehaze.mp4"
+                            autoplay
+                            loop
+                            muted
+                            playsinline
+                            preload="auto"
+                        >
+                            <source src="videos/front camers dehaze.mp4" type="video/mp4" />
+                        </video>
+                        <!-- 2. Raw Hazed Video Stream (Looping MP4) -->
+                        <video
+                            id="video-front-hazed"
+                            class="feed-media-video video-hazed"
+                            src="videos/front camers haze.mp4"
+                            autoplay
+                            loop
+                            muted
+                            playsinline
+                            preload="auto"
+                        >
+                            <source src="videos/front camers haze.mp4" type="video/mp4" />
+                        </video>
+                    </div>
+
+                    <!-- Overlays -->
+                    <div class="cam-scanlines"></div>
+                    <div class="cam-vignette"></div>
+                    <div class="hud-bracket tl"></div>
+                    <div class="hud-bracket tr"></div>
+                    <div class="hud-bracket bl"></div>
+                    <div class="hud-bracket br"></div>
+                    <div class="cam-expand-hint">⛶ CLICK TO EXPAND</div>
+                </div>
+
+                <!-- ========================================================
+                 ② TOP-CENTER: BIRD'S EYE VIEW (3D RADAR SCANNER)
+                 ======================================================== -->
+                <div
+                    class="cam-panel"
+                    id="panel-bev"
+                    data-cam="BIRD'S EYE VIEW — 3D RADAR PERSPECTIVE"
+                    title="Click to expand view"
+                >
+                    <!-- Header -->
+                    <div class="cam-header">
+                        <div class="cam-title-group">
+                            <div class="cam-icon-dot" style="background: #00e5ff; box-shadow: 0 0 8px #00e5ff"></div>
+                            <span class="cam-name-text">BIRD'S EYE RADAR</span>
+                            <span class="cam-badge-res">3D TOP VIEW</span>
+                        </div>
+                        <!-- Compass North Mini Indicator -->
+                        <div
+                            style="
+                                display: flex;
+                                align-items: center;
+                                gap: 4px;
+                                font-family: var(--font-mono);
+                                font-size: 10px;
+                                color: rgba(255, 255, 255, 0.7);
+                            "
+                        >
+                            <span style="color: var(--accent-red); font-weight: 900">▲</span> N 004°
+                        </div>
+                    </div>
+
+                    <!-- Radar Map Viewport -->
+                    <div class="feed-container" style="background: #080e18">
+                        <svg
+                            class="feed-svg"
+                            viewBox="0 0 300 380"
+                            preserveAspectRatio="xMidYMid meet"
+                            xmlns="http://www.w3.org/2000/svg"
+                        >
+                            <defs>
+                                <!-- Front Radar Arc Gradient -->
+                                <linearGradient id="bevFrontCone" x1="0" y1="1" x2="0" y2="0">
+                                    <stop offset="0%" stop-color="#00fa9a" stop-opacity="0.8" />
+                                    <stop offset="60%" stop-color="#00fa9a" stop-opacity="0.25" />
+                                    <stop offset="100%" stop-color="#00fa9a" stop-opacity="0" />
+                                </linearGradient>
+                                <!-- Rear Proximity Gradient -->
+                                <linearGradient id="bevRearCone" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stop-color="#00e5ff" stop-opacity="0.7" />
+                                    <stop offset="100%" stop-color="#00e5ff" stop-opacity="0" />
+                                </linearGradient>
+                                <filter id="radarBloom">
+                                    <feGaussianBlur stdDeviation="3" result="b" />
+                                    <feMerge>
+                                        <feMergeNode in="b" />
+                                        <feMergeNode in="SourceGraphic" />
+                                    </feMerge>
+                                </filter>
+                            </defs>
+
+                            <!-- Top-down Rocky Mine Haul Corridor -->
+                            <rect width="300" height="380" fill="#070c14" />
+
+                            <!-- Concentric Distance Range Rings -->
+                            <circle
+                                cx="150"
+                                cy="235"
+                                r="50"
+                                fill="none"
+                                stroke="rgba(255,255,255,0.08)"
+                                stroke-width="1"
+                            />
+                            <circle
+                                cx="150"
+                                cy="235"
+                                r="100"
+                                fill="none"
+                                stroke="rgba(255,255,255,0.08)"
+                                stroke-width="1"
+                            />
+                            <circle
+                                cx="150"
+                                cy="235"
+                                r="150"
+                                fill="none"
+                                stroke="rgba(255,255,255,0.06)"
+                                stroke-width="1"
+                            />
+                            <text x="205" y="232" fill="rgba(255,255,255,0.25)" font-size="8" font-family="monospace">
+                                25m
+                            </text>
+                            <text x="255" y="232" fill="rgba(255,255,255,0.25)" font-size="8" font-family="monospace">
+                                50m
+                            </text>
+
+                            <!-- Curving Mine Haul Road Surface -->
+                            <path
+                                d="M 105,380 C 110,300 115,220 125,160 C 135,100 155,50 165,0 L 215,0 C 205,50 185,100 175,160 C 165,220 160,300 165,380 Z"
+                                fill="rgba(35, 45, 58, 0.7)"
+                                stroke="rgba(255,255,255,0.12)"
+                                stroke-width="0.8"
+                            />
+                            <!-- Center dashed navigation line -->
+                            <path
+                                d="M 135,380 C 137,300 145,220 150,160 C 155,100 175,50 190,0"
+                                fill="none"
+                                stroke="#00e5ff"
+                                stroke-width="1.8"
+                                stroke-dasharray="8,5"
+                                opacity="0.85"
+                            />
+
+                            <!-- Front Radar Coverage Cone (Green) -->
+                            <path
+                                d="M 150,235 L 85,115 A 130,130 0 0,1 215,115 Z"
+                                fill="url(#bevFrontCone)"
+                                filter="url(#radarBloom)"
+                            />
+                            <path
+                                d="M 85,115 A 130,130 0 0,1 215,115"
+                                fill="none"
+                                stroke="#00fa9a"
+                                stroke-width="2"
+                                opacity="0.9"
+                            />
+
+                            <!-- Rear Radar Coverage Arc (Cyan) -->
+                            <path
+                                d="M 150,235 L 90,320 A 90,90 0 0,0 210,320 Z"
+                                fill="url(#bevRearCone)"
+                                filter="url(#radarBloom)"
+                            />
+                            <path
+                                d="M 90,320 A 90,90 0 0,0 210,320"
+                                fill="none"
+                                stroke="#00e5ff"
+                                stroke-width="1.8"
+                                opacity="0.8"
+                            />
+
+                            <!-- Left Blind-Spot Arc (Yellow) -->
+                            <path
+                                d="M 150,235 A 75,30 0 0,0 80,225 L 150,235"
+                                fill="rgba(255, 210, 0, 0.15)"
+                                stroke="#ffd200"
+                                stroke-width="1.2"
+                                opacity="0.8"
+                            />
+
+                            <!-- Right Blind-Spot Arc (Magenta) -->
+                            <path
+                                d="M 150,235 A 75,30 0 0,1 220,225 L 150,235"
+                                fill="rgba(200, 0, 255, 0.15)"
+                                stroke="#c800ff"
+                                stroke-width="1.2"
+                                opacity="0.8"
+                            />
+
+                            <!-- Lead Detected Truck (Obstacle Ahead @ 38m) -->
+                            <g transform="translate(152, 130)">
+                                <ellipse
+                                    cx="0"
+                                    cy="0"
+                                    rx="14"
+                                    ry="7"
+                                    fill="none"
+                                    stroke="#ff1744"
+                                    stroke-width="1.5"
+                                    filter="url(#radarBloom)"
+                                >
+                                    <animate attributeName="r" values="12;22;12" dur="1.8s" repeatCount="indefinite" />
+                                    <animate
+                                        attributeName="opacity"
+                                        values="0.9;0.1;0.9"
+                                        dur="1.8s"
+                                        repeatCount="indefinite"
+                                    />
+                                </ellipse>
+                                <rect
+                                    x="-9"
+                                    y="-14"
+                                    width="18"
+                                    height="28"
+                                    rx="3"
+                                    fill="#f59e0b"
+                                    stroke="#ffffff"
+                                    stroke-width="1"
+                                />
+                                <text
+                                    x="14"
+                                    y="4"
+                                    fill="#00fa9a"
+                                    font-size="8"
+                                    font-family="monospace"
+                                    font-weight="bold"
+                                >
+                                    38m
+                                </text>
+                            </g>
+
+                            <!-- Own Haul Truck (Centered on Radar) -->
+                            <g transform="translate(150, 235)">
+                                <!-- Ground shadow -->
+                                <ellipse cx="0" cy="2" rx="16" ry="6" fill="rgba(0,0,0,0.6)" />
+                                <!-- Chassis / Yellow body -->
+                                <rect
+                                    x="-13"
+                                    y="-22"
+                                    width="26"
+                                    height="42"
+                                    rx="4"
+                                    fill="#eab308"
+                                    stroke="#fef08a"
+                                    stroke-width="1.8"
+                                    filter="url(#radarBloom)"
+                                />
+                                <!-- Cab -->
+                                <rect x="-10" y="-21" width="20" height="12" rx="2" fill="#ca8a04" />
+                                <rect x="-8" y="-19" width="16" height="7" rx="1" fill="#38bdf8" />
+                                <!-- Dump bed ribs -->
+                                <line x1="-10" y1="0" x2="10" y2="0" stroke="#a16207" stroke-width="1.5" />
+                                <line x1="-10" y1="8" x2="10" y2="8" stroke="#a16207" stroke-width="1.5" />
+                                <line x1="-10" y1="14" x2="10" y2="14" stroke="#a16207" stroke-width="1.5" />
+                                <!-- Direction heading arrow -->
+                                <polygon points="0,-27 4,-23 -4,-23" fill="#ffffff" />
+                            </g>
+                        </svg>
+                    </div>
+
+                    <!-- Bird's Eye Radar Legend -->
+                    <div
+                        style="
+                            position: absolute;
+                            bottom: 8px;
+                            left: 10px;
+                            font-family: var(--font-mono);
+                            font-size: 8.5px;
+                            color: rgba(255, 255, 255, 0.75);
+                            background: rgba(4, 8, 16, 0.85);
+                            padding: 4px 8px;
+                            border-radius: 6px;
+                            border: 1px solid rgba(255, 255, 255, 0.1);
+                            z-index: 10;
+                            display: flex;
+                            flex-direction: column;
+                            gap: 2px;
+                        "
+                    >
+                        <div style="display: flex; align-items: center; gap: 5px">
+                            <span
+                                style="
+                                    width: 6px;
+                                    height: 6px;
+                                    background: #00fa9a;
+                                    border-radius: 50%;
+                                    display: inline-block;
+                                "
+                            ></span
+                            >Front Radar Cone
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 5px">
+                            <span
+                                style="
+                                    width: 6px;
+                                    height: 6px;
+                                    background: #00e5ff;
+                                    border-radius: 50%;
+                                    display: inline-block;
+                                "
+                            ></span
+                            >Rear Radar Arc
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 5px">
+                            <span
+                                style="
+                                    width: 6px;
+                                    height: 6px;
+                                    background: #ffd200;
+                                    border-radius: 50%;
+                                    display: inline-block;
+                                "
+                            ></span
+                            >Left Flank Radar
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 5px">
+                            <span
+                                style="
+                                    width: 6px;
+                                    height: 6px;
+                                    background: #c800ff;
+                                    border-radius: 50%;
+                                    display: inline-block;
+                                "
+                            ></span
+                            >Right Flank Radar
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 5px">
+                            <span style="width: 10px; height: 2px; background: #00e5ff; display: inline-block"></span
+                            >Planned Path
+                        </div>
+                    </div>
+
+                    <div class="cam-scanlines"></div>
+                    <div class="hud-bracket tl"></div>
+                    <div class="hud-bracket tr"></div>
+                    <div class="hud-bracket bl"></div>
+                    <div class="hud-bracket br"></div>
+                    <div class="cam-expand-hint">⛶ CLICK TO EXPAND</div>
+                </div>
+
+                <!-- ========================================================
+                 ③ TOP-RIGHT: FRONT RAW — HAZED VIEW (REAL SENSOR STREAM)
+                 (HAZED COMPARISON STREAM AS UPLOADED)
+                 ======================================================== -->
+                <div
+                    class="cam-panel"
+                    id="panel-front-raw"
+                    data-cam="FRONT RAW — HAZED SENSOR STREAM"
+                    title="Click to expand view"
+                >
+                    <!-- Header -->
+                    <div class="cam-header">
+                        <div class="cam-title-group">
+                            <div class="cam-icon-dot" style="background: #ffaa00; box-shadow: 0 0 8px #ffaa00"></div>
+                            <span class="cam-name-text">FRONT RAW (HAZED VIEW)</span>
+                            <span class="cam-badge-raw">RAW SENSOR</span>
+                        </div>
+                        <span
+                            style="
+                                font-family: var(--font-mono);
+                                font-size: 9px;
+                                color: var(--accent-amber);
+                                background: rgba(255, 170, 0, 0.12);
+                                padding: 2px 6px;
+                                border-radius: 4px;
+                                border: 1px solid rgba(255, 170, 0, 0.3);
+                                font-weight: 700;
+                            "
+                        >
+                            ⚠ UNPROCESSED
+                        </span>
+                    </div>
+
+                    <!-- Feed Viewport: Plays real raw hazed video stream -->
+                    <div class="feed-container">
+                        <video
+                            class="feed-media-video"
+                            src="videos/front camers haze.mp4"
+                            autoplay
+                            loop
+                            muted
+                            playsinline
+                            preload="auto"
+                        >
+                            <source src="videos/front camers haze.mp4" type="video/mp4" />
+                        </video>
+
+                        <!-- Real-Time Optical Telemetry Diagnostics Bar -->
+                        <div class="raw-telemetry-bar">
+                            <div>
+                                <span class="tag-warn">FOG OBSCURATION:</span>
+                                <span class="metric-val">84.2%</span> &nbsp;|&nbsp; <span>ATTENUATION:</span>
+                                <span class="metric-val">3.4 dB/m</span>
+                            </div>
+                            <div>
+                                <span>STREAM:</span> <span class="metric-val">RAW 1080p</span> &nbsp;|&nbsp;
+                                <span class="tag-warn">UNPROCESSED</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Overlays -->
+                    <div class="cam-scanlines"></div>
+                    <div class="cam-vignette"></div>
+                    <div class="hud-bracket tl"></div>
+                    <div class="hud-bracket tr"></div>
+                    <div class="hud-bracket bl"></div>
+                    <div class="hud-bracket br"></div>
+                    <div class="cam-expand-hint">⛶ CLICK TO EXPAND</div>
+                </div>
+
+                <!-- ========================================================
+                 ④ BOTTOM-LEFT: LEFT CAMERA (BLIND SPOT / LEFT FLANK)
+                 ======================================================== -->
+                <div
+                    class="cam-panel"
+                    id="panel-left-cam"
+                    data-cam="LEFT CAMERA — LEFT FLANK & TIRE MONITOR"
+                    title="Click to expand view"
+                >
+                    <!-- Header -->
+                    <div class="cam-header">
+                        <div class="cam-title-group">
+                            <div class="cam-icon-dot"></div>
+                            <span class="cam-name-text">LEFT CAMERA</span>
+                            <span class="cam-badge-res">LEFT SIDE · 1080p</span>
+                        </div>
+                    </div>
+
+                    <!-- Feed Viewport (Blank Feed) -->
+                    <div class="feed-container" style="background: #060b13"></div>
+
+                    <div class="cam-scanlines"></div>
+                    <div class="hud-bracket tl"></div>
+                    <div class="hud-bracket br"></div>
+                    <div class="cam-expand-hint">⛶ CLICK TO EXPAND</div>
+                </div>
+
+                <!-- ========================================================
+                 ⑤ BOTTOM-CENTER: REAR CAMERA (BACKWARD VIEW / RADAR PROXIMITY)
+                 ======================================================== -->
+                <div
+                    class="cam-panel"
+                    id="panel-rear-cam"
+                    data-cam="REAR CAMERA — BACKWARD OBSTACLE & REAR RADAR"
+                    title="Click to expand view"
+                >
+                    <!-- Header -->
+                    <div class="cam-header">
+                        <div class="cam-title-group">
+                            <div class="cam-icon-dot"></div>
+                            <span class="cam-name-text">REAR CAMERA (BACK VIEW)</span>
+                            <span class="cam-badge-res">1080p · REVERSE RADAR</span>
+                        </div>
+                        <span
+                            style="
+                                font-family: var(--font-mono);
+                                font-size: 9px;
+                                color: var(--accent-green);
+                                background: rgba(0, 250, 154, 0.12);
+                                padding: 2px 6px;
+                                border-radius: 4px;
+                                border: 1px solid rgba(0, 250, 154, 0.3);
+                                font-weight: 700;
+                            "
+                        >
+                            ⤺ RADAR PROXIMITY: 18.5m CLEAR
+                        </span>
+                    </div>
+
+                    <!-- Feed Viewport -->
+                    <div class="feed-container">
+                        <svg
+                            class="feed-svg"
+                            viewBox="0 0 500 300"
+                            preserveAspectRatio="xMidYMid slice"
+                            xmlns="http://www.w3.org/2000/svg"
+                        >
+                            <defs>
+                                <linearGradient id="rearSky" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stop-color="#141c26" />
+                                    <stop offset="100%" stop-color="#334155" />
+                                </linearGradient>
+                                <linearGradient id="radarArcGrad" x1="0" y1="1" x2="0" y2="0">
+                                    <stop offset="0%" stop-color="#00e5ff" stop-opacity="0.6" />
+                                    <stop offset="100%" stop-color="#00e5ff" stop-opacity="0.05" />
+                                </linearGradient>
+                                <filter id="radarGlow">
+                                    <feGaussianBlur stdDeviation="3" result="b" />
+                                    <feMerge>
+                                        <feMergeNode in="b" />
+                                        <feMergeNode in="SourceGraphic" />
+                                    </feMerge>
+                                </filter>
+                            </defs>
+
+                            <!-- Sky / Fog -->
+                            <rect width="500" height="300" fill="url(#rearSky)" />
+
+                            <!-- Haul Road extending backwards into fog -->
+                            <polygon points="190,140 310,140 460,300 40,300" fill="#1c1917" />
+                            <!-- Center road tire track depression -->
+                            <polygon points="235,140 265,140 300,300 200,300" fill="#171412" />
+
+                            <!-- Background mine berm and fog silhouette -->
+                            <polygon
+                                points="0,150 190,140 310,140 500,155 500,200 0,190"
+                                fill="#293340"
+                                opacity="0.6"
+                            />
+
+                            <!-- BEML BH205E Dump Bed Rear Steel Overhang & Structural Ribs (Top & Edges) -->
+                            <!-- Top steel canopy lip -->
+                            <polygon points="0,0 500,0 480,45 20,45" fill="#ca8a04" stroke="#a16207" stroke-width="2" />
+                            <rect x="0" y="42" width="500" height="8" fill="#1f2937" />
+                            <!-- Left Heavy Bed Pillar -->
+                            <polygon
+                                points="0,0 35,45 35,260 0,300"
+                                fill="#eab308"
+                                stroke="#ca8a04"
+                                stroke-width="1.5"
+                            />
+                            <!-- Right Heavy Bed Pillar -->
+                            <polygon
+                                points="500,0 465,45 465,260 500,300"
+                                fill="#eab308"
+                                stroke="#ca8a04"
+                                stroke-width="1.5"
+                            />
+                            <!-- Massive Rear Tires partially in view on sides -->
+                            <rect x="0" y="190" width="30" height="110" fill="#171717" stroke="#333" />
+                            <rect x="470" y="190" width="30" height="110" fill="#171717" stroke="#333" />
+                            <!-- Heavy-Duty Mudflaps -->
+                            <rect x="25" y="200" width="20" height="70" fill="#0f172a" />
+                            <rect x="455" y="200" width="20" height="70" fill="#0f172a" />
+
+                            <!-- Active Reverse Radar Cone (Pulsing) -->
+                            <path
+                                d="M 250,300 L 130,170 A 150,70 0 0,1 370,170 Z"
+                                fill="url(#radarArcGrad)"
+                                filter="url(#radarGlow)"
+                            />
+
+                            <!-- Dynamic Reverse Trajectory Guidelines (Tesla / Heavy Equipment Style) -->
+                            <!-- Left Guide Track -->
+                            <path d="M 90,300 L 210,160" stroke="#00fa9a" stroke-width="2.5" stroke-dasharray="10,6" />
+                            <!-- Right Guide Track -->
+                            <path d="M 410,300 L 290,160" stroke="#00fa9a" stroke-width="2.5" stroke-dasharray="10,6" />
+
+                            <!-- Distance Markers (Red = 5m, Amber = 10m, Green = 15m & 20m) -->
+                            <!-- 5m Red Danger Line -->
+                            <line x1="120" y1="270" x2="380" y2="270" stroke="#ff1744" stroke-width="2.5" />
+                            <text
+                                x="390"
+                                y="273"
+                                fill="#ff1744"
+                                font-size="8"
+                                font-family="monospace"
+                                font-weight="bold"
+                            >
+                                5.0m
+                            </text>
+
+                            <!-- 10m Amber Caution Line -->
+                            <line x1="150" y1="230" x2="350" y2="230" stroke="#ffaa00" stroke-width="2" />
+                            <text
+                                x="360"
+                                y="233"
+                                fill="#ffaa00"
+                                font-size="8"
+                                font-family="monospace"
+                                font-weight="bold"
+                            >
+                                10.0m
+                            </text>
+
+                            <!-- 15m Green Safe Line -->
+                            <line x1="180" y1="195" x2="320" y2="195" stroke="#00fa9a" stroke-width="2" />
+                            <text
+                                x="330"
+                                y="198"
+                                fill="#00fa9a"
+                                font-size="8"
+                                font-family="monospace"
+                                font-weight="bold"
+                            >
+                                15.0m
+                            </text>
+
+                            <!-- 20m Green Clear Line -->
+                            <line
+                                x1="205"
+                                y1="165"
+                                x2="295"
+                                y2="165"
+                                stroke="#00e5ff"
+                                stroke-width="1.8"
+                                stroke-dasharray="6,4"
+                            />
+                            <text
+                                x="305"
+                                y="168"
+                                fill="#00e5ff"
+                                font-size="8"
+                                font-family="monospace"
+                                font-weight="bold"
+                            >
+                                20.0m
+                            </text>
+
+                            <!-- Center Reversing Grid Crosshairs -->
+                            <line
+                                x1="250"
+                                y1="285"
+                                x2="250"
+                                y2="155"
+                                stroke="rgba(0, 229, 255, 0.4)"
+                                stroke-width="1.2"
+                                stroke-dasharray="4,4"
+                            />
+
+                            <!-- Trailing Safe Vehicle / Haul Road Marker Detected at 18.5m -->
+                            <g transform="translate(250, 168)">
+                                <rect
+                                    x="-24"
+                                    y="-12"
+                                    width="48"
+                                    height="20"
+                                    rx="3"
+                                    fill="rgba(0, 250, 154, 0.12)"
+                                    stroke="#00fa9a"
+                                    stroke-width="1.5"
+                                />
+                                <text
+                                    x="0"
+                                    y="1"
+                                    fill="#00fa9a"
+                                    font-size="7.5"
+                                    font-family="monospace"
+                                    font-weight="bold"
+                                    text-anchor="middle"
+                                >
+                                    TRAIL // 18.5m
+                                </text>
+                            </g>
+
+                            <!-- Dense Atmospheric Fog Layer -->
+                            <rect width="500" height="300" fill="rgba(148, 163, 184, 0.38)" />
+
+                            <!-- Rear Camera Telemetry HUD Status Strip -->
+                            <rect
+                                x="50"
+                                y="278"
+                                width="400"
+                                height="18"
+                                rx="4"
+                                fill="rgba(4, 10, 18, 0.85)"
+                                stroke="rgba(0, 250, 154, 0.3)"
+                                stroke-width="1"
+                            />
+                            <text
+                                x="250"
+                                y="290"
+                                fill="#00fa9a"
+                                font-size="8.5"
+                                font-family="monospace"
+                                font-weight="bold"
+                                text-anchor="middle"
+                            >
+                                REAR RADAR: CLEAR · BLIND SPOT SENSOR 77GHz OK · BEML BH205E REAR
+                            </text>
+                        </svg>
+                    </div>
+
+                    <!-- Overlays -->
+                    <div class="cam-scanlines"></div>
+                    <div class="cam-vignette"></div>
+                    <div class="hud-bracket tl"></div>
+                    <div class="hud-bracket tr"></div>
+                    <div class="hud-bracket bl"></div>
+                    <div class="hud-bracket br"></div>
+                    <div class="cam-expand-hint">⛶ CLICK TO EXPAND</div>
+                </div>
+
+                <!-- ========================================================
+                 ⑥ BOTTOM-RIGHT: RIGHT CAMERA (BLIND SPOT / RIGHT FLANK)
+                 ======================================================== -->
+                <div
+                    class="cam-panel"
+                    id="panel-right-cam"
+                    data-cam="RIGHT CAMERA — RIGHT FLANK & BERM MONITOR"
+                    title="Click to expand view"
+                >
+                    <!-- Header -->
+                    <div class="cam-header">
+                        <div class="cam-title-group">
+                            <div class="cam-icon-dot"></div>
+                            <span class="cam-name-text">RIGHT CAMERA</span>
+                            <span class="cam-badge-res">RIGHT SIDE · 1080p</span>
+                        </div>
+                    </div>
+
+                    <!-- Feed Viewport (Blank Feed) -->
+                    <div class="feed-container" style="background: #060b13"></div>
+
+                    <div class="cam-scanlines"></div>
+                    <div class="hud-bracket tl"></div>
+                    <div class="hud-bracket br"></div>
+                    <div class="cam-expand-hint">⛶ CLICK TO EXPAND</div>
+                </div>
+            </div>
+            <!-- /camera-grid -->
+
+            <!-- ========================================================
+             BOTTOM STATUS INFO BAR (8 LIVE TELEMETRY CARDS)
+             ======================================================== -->
+            <div class="info-bar">
+                <!-- Card 1: Communication -->
+                <div class="info-card">
+                    <div class="ic-hdr">📡 COMMUNICATION</div>
+                    <div class="ic-val" style="color: var(--accent-green); font-size: 14px">
+                        <span style="font-size: 9px">●</span> Connected
+                    </div>
+                    <div class="ic-sub">
+                        RANGE: 2.4 km · DIRECT<br />
+                        SIGNAL: -64 dBm · C-V2X PC5
+                    </div>
+                </div>
+
+                <!-- Card 2: Speedometer & Heading Gauge -->
+                <div class="info-card info-card-speedo">
+                    <div class="ic-hdr">⚡ SPEED & HEADING</div>
+                    <div
+                        style="
+                            display: flex;
+                            align-items: center;
+                            justify-content: space-between;
+                            gap: 6px;
+                            margin: 2px 0;
+                        "
+                    >
+                        <div style="width: 50px; height: 50px; position: relative; flex-shrink: 0">
+                            <svg viewBox="0 0 80 80" style="width: 100%; height: 100%; display: block">
+                                <defs>
+                                    <linearGradient id="speedoMiniGrad" x1="0" y1="1" x2="1" y2="0">
+                                        <stop offset="0%" stop-color="#00fa9a" />
+                                        <stop offset="100%" stop-color="#00e5ff" />
+                                    </linearGradient>
+                                </defs>
+                                <!-- 270 deg track: r=30, circ=188.5, 270deg=141.4 -->
+                                <circle
+                                    cx="40"
+                                    cy="40"
+                                    r="30"
+                                    fill="none"
+                                    stroke="rgba(255,255,255,0.08)"
+                                    stroke-width="6"
+                                    stroke-dasharray="141.4 47.1"
+                                    stroke-dashoffset="-23.5"
+                                />
+                                <circle
+                                    id="speedo-active-arc"
+                                    cx="40"
+                                    cy="40"
+                                    r="30"
+                                    fill="none"
+                                    stroke="url(#speedoMiniGrad)"
+                                    stroke-width="6"
+                                    stroke-dasharray="29.5 159.0"
+                                    stroke-dashoffset="-23.5"
+                                    stroke-linecap="round"
+                                />
+                                <text
+                                    id="speedo-number"
+                                    x="40"
+                                    y="43"
+                                    fill="#ffffff"
+                                    font-size="16"
+                                    font-weight="900"
+                                    font-family="Inter,sans-serif"
+                                    text-anchor="middle"
+                                >
+                                    12.5
+                                </text>
+                                <text
+                                    x="40"
+                                    y="53"
+                                    fill="rgba(0,229,255,0.85)"
+                                    font-size="6.5"
+                                    font-weight="700"
+                                    font-family="monospace"
+                                    text-anchor="middle"
+                                >
+                                    km/h
+                                </text>
+                            </svg>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 3px; flex: 1">
+                            <div style="display: flex; gap: 4px; align-items: center">
+                                <span
+                                    style="
+                                        background: rgba(0, 229, 255, 0.15);
+                                        border: 1px solid rgba(0, 229, 255, 0.5);
+                                        color: #00e5ff;
+                                        padding: 1px 5px;
+                                        border-radius: 3px;
+                                        font-size: 9px;
+                                        font-weight: 900;
+                                        font-family: monospace;
+                                    "
+                                    >D</span
+                                >
+                                <span
+                                    style="
+                                        background: rgba(0, 250, 154, 0.15);
+                                        border: 1px solid rgba(0, 250, 154, 0.5);
+                                        color: #00fa9a;
+                                        padding: 1px 5px;
+                                        border-radius: 3px;
+                                        font-size: 8px;
+                                        font-weight: 800;
+                                        font-family: monospace;
+                                    "
+                                    >AUTO</span
+                                >
+                            </div>
+                            <div
+                                id="speed-dir"
+                                style="
+                                    font-size: 8px;
+                                    font-family: var(--font-mono);
+                                    color: rgba(255, 255, 255, 0.7);
+                                    white-space: nowrap;
+                                "
+                            >
+                                HEADING: N (004°)
+                            </div>
+                        </div>
+                    </div>
+                    <span id="speed-val" style="display: none">12.5</span>
+                    <div class="ic-sub">BEML ELEC-DRIVE</div>
+                </div>
+
+                <!-- Card 3: Navigation Next Turn -->
+                <div class="info-card">
+                    <div class="ic-hdr">🧭 NAVIGATION</div>
+                    <div class="ic-val" style="font-size: 13px; color: #00e5ff">↪ Hairpin Left</div>
+                    <div class="ic-sub">
+                        IN: 200m · RAMP-02<br />
+                        HOPPER 1 / CRUSHER
+                    </div>
+                </div>
+
+                <!-- Card 4: Vehicle Status -->
+                <div class="info-card">
+                    <div class="ic-hdr">🚛 BEML FLEET</div>
+                    <div class="ic-val" style="font-size: 13px; color: var(--accent-primary)">
+                        ⊙ <span id="v2v-count">03</span> Units Prox
+                    </div>
+                    <div class="ic-sub">
+                        T-0417, T-0231, T-0568<br />
+                        C-V2X DIRECT V2V
+                    </div>
+                </div>
+
+                <!-- Card 5: Weather Sensor -->
+                <div class="info-card">
+                    <div class="ic-hdr">🌫 WEATHER</div>
+                    <div class="ic-val" style="color: var(--accent-amber); font-size: 13px">⚠ Fog Detected</div>
+                    <div class="ic-sub">
+                        Vis: ~<span id="vis-reading">75</span>m &nbsp;|&nbsp; <span id="temp-reading">3.2</span>°C<br />
+                        Humidity: <span id="hum-reading">92</span>%
+                    </div>
+                </div>
+
+                <!-- Card 6: Payload -->
+                <div class="info-card">
+                    <div class="ic-hdr">⛰ PAYLOAD // BEML BH100</div>
+                    <div class="ic-val" style="font-size: 16px">
+                        <span id="payload-val">95</span
+                        ><span style="font-size: 11px; color: var(--text-muted); font-weight: 400"> t</span>
+                    </div>
+                    <div class="payload-track"><div class="payload-fill" style="width: 95%"></div></div>
+                    <div class="ic-sub">Iron Ore (Hematite 65% Fe)</div>
+                </div>
+
+                <!-- Card 7: Route -->
+                <div class="info-card">
+                    <div class="ic-hdr">📍 ROUTE</div>
+                    <div class="ic-val" style="font-size: 13px">Deposit 11 Loop</div>
+                    <div class="ic-sub">
+                        4.8 km remaining<br />
+                        <span style="color: var(--accent-primary)">Auto Assist [ON]</span>
+                    </div>
+                </div>
+
+                <!-- Card 8: Systems OK -->
+                <div class="info-card">
+                    <div class="ic-hdr"><span style="color: var(--accent-green); font-size: 12px">✔</span> SYSTEMS</div>
+                    <div class="systems-grid">
+                        <div class="sys-check">Brakes OK</div>
+                        <div class="sys-check">Thermal OK</div>
+                        <div class="sys-check">DCP Dehaze OK</div>
+                        <div class="sys-check">77GHz Radar OK</div>
+                        <div class="sys-check">TC397 MCU OK</div>
+                        <div class="sys-check">Ultrasonic OK</div>
+                    </div>
+                </div>
+            </div>
+            <!-- /info-bar -->
+        </main>
+
+        <!-- Global Footer -->
+        <footer class="footer">
+            <div>
+                2026-09-20 &nbsp;<span id="current-time">00:00:00</span>
+                &nbsp;|&nbsp; 📍 NMDC BAILADILA IRON ORE MINE (BIOM-KIRANDUL DEP-11) &nbsp;|&nbsp; ▲ 1240 m ELEV &nbsp;|&nbsp; UNIT: BEML BH100 #0417
+            </div>
+            <div style="letter-spacing: 1.5px; font-size: 10px">
+                AUTONOMOUS HAULAGE ASSIST &nbsp;|&nbsp; SAFER MINES. HIGHER PRODUCTIVITY. &nbsp; ◈ SAMVEDAN
+            </div>
+        </footer>
+
+        <!-- Emergency Alert Interlock Overlay -->
+        <div id="alert-overlay" class="critical-alert-overlay">
+            <div class="alert-banner">⚠ CRITICAL: OBSTACLE IMMINENT — FAIL-SAFE AUTO-BRAKING</div>
+        </div>
+        <button id="dev-trigger" class="dev-trigger" title="Fail-Safe Autonomous Emergency Braking (AEB) Interlock">TEST AEB INTERLOCK</button>
+
+        <!-- ========================================================
+         FULL-SCREEN CAMERA LIGHTBOX / ENLARGED INSPECTOR MODAL
+         ======================================================== -->
+        <div id="cam-lightbox">
+            <div class="lb-modal-window">
+                <!-- Header -->
+                <div class="lb-modal-header">
+                    <div class="lb-header-title">
+                        <span
+                            style="
+                                width: 8px;
+                                height: 8px;
+                                background: var(--accent-red);
+                                border-radius: 50%;
+                                box-shadow: 0 0 8px var(--accent-red);
+                                display: inline-block;
+                            "
+                        ></span>
+                        <span id="lb-camera-title">CAMERA INSPECTOR</span>
+                    </div>
+                    <div class="lb-header-controls">
+                        <button class="dehaze-pill-btn" id="lb-dehaze-btn" style="display: none">
+                            ☀ AI DEHAZE: <span id="lb-dehaze-text">ON</span>
+                        </button>
+                        <button class="lb-close-btn" id="lb-close-button">✕ CLOSE (ESC)</button>
+                    </div>
+                </div>
+
+                <!-- Main Stage -->
+                <div class="lb-stage">
+                    <div id="lb-feed-mount" class="lb-stage-feed"></div>
+
+                    <!-- Live HUD overlay -->
+                    <div class="lb-hud-overlay">
+                        <div
+                            class="hud-bracket tl"
+                            style="top: 18px; left: 18px; width: 30px; height: 30px; border-width: 2.5px"
+                        ></div>
+                        <div
+                            class="hud-bracket tr"
+                            style="top: 18px; right: 18px; width: 30px; height: 30px; border-width: 2.5px"
+                        ></div>
+                        <div
+                            class="hud-bracket bl"
+                            style="bottom: 45px; left: 18px; width: 30px; height: 30px; border-width: 2.5px"
+                        ></div>
+                        <div
+                            class="hud-bracket br"
+                            style="bottom: 45px; right: 18px; width: 30px; height: 30px; border-width: 2.5px"
+                        ></div>
+                        <div class="lb-crosshair"></div>
+
+                        <!-- Footer HUD Telemetry -->
+                        <div class="lb-footer-hud">
+                            <div>
+                                STREAM: <span>1080p HDR (1920×1080)</span> &nbsp;|&nbsp; FPS:
+                                <span>30.0</span> &nbsp;|&nbsp; BITRATE: <span>14.8 Mbps</span> &nbsp;|&nbsp; LATENCY:
+                                <span>12ms</span>
+                            </div>
+                            <div>
+                                SENSOR VISIBILITY: <span id="lb-vis-text">75m</span> &nbsp;|&nbsp; AI CONFIDENCE:
+                                <span>98.4%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="lb-close-hint">Click anywhere outside the window or press ESC to return to HUD</div>
+        </div>
+
+        <!-- ========================================================
+         MEDIA / VIDEO PATH CONFIGURATION MODAL
+         ======================================================== -->
+        <div id="media-config-modal" class="media-modal-overlay">
+            <div class="media-modal-card">
+                <div class="media-modal-header">
+                    <div class="media-modal-title">
+                        <span style="color: var(--accent-primary)">⚙</span> VIDEO STREAM MANAGER // SAMVEDAN
+                    </div>
+                    <button id="btn-close-media-modal" class="lb-close-btn" style="padding: 4px 10px; font-size: 11px">
+                        ✕ CLOSE
+                    </button>
+                </div>
+
+                <div class="media-modal-body">
+                    <p
+                        style="
+                            font-size: 11.5px;
+                            color: rgba(255, 255, 255, 0.7);
+                            margin-bottom: 14px;
+                            line-height: 1.4;
+                        "
+                    >
+                        Configure or upload video files directly from here, or permanently set them in
+                        <code
+                            style="
+                                color: #00e5ff;
+                                background: rgba(0, 229, 255, 0.1);
+                                padding: 2px 6px;
+                                border-radius: 4px;
+                            "
+                            >config.js</code
+                        >.
+                    </p>
+
+                    <!-- Dehazed Video Row -->
+                    <div class="media-input-group">
+                        <label class="media-label">
+                            <span>☀ AI DEHAZED VIDEO STREAM</span>
+                            <span class="media-badge">PROCESSED FEED</span>
+                        </label>
+                        <div class="media-row">
+                            <input
+                                type="text"
+                                id="cfg-dehazed-input"
+                                class="media-text-input"
+                                placeholder="e.g. videos/front camers dehaze.mp4 or local path"
+                            />
+                            <label class="media-upload-btn">
+                                📁 UPLOAD / BROWSE...
+                                <input
+                                    type="file"
+                                    id="cfg-dehazed-file"
+                                    accept="video/mp4,video/*"
+                                    style="display: none"
+                                />
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Hazed Video Row -->
+                    <div class="media-input-group" style="margin-top: 14px">
+                        <label class="media-label">
+                            <span>🌫 RAW HAZED VIDEO STREAM</span>
+                            <span
+                                class="media-badge"
+                                style="
+                                    color: var(--accent-amber);
+                                    border-color: rgba(255, 170, 0, 0.3);
+                                    background: rgba(255, 170, 0, 0.1);
+                                "
+                                >RAW SENSOR</span
+                            >
+                        </label>
+                        <div class="media-row">
+                            <input
+                                type="text"
+                                id="cfg-hazed-input"
+                                class="media-text-input"
+                                placeholder="e.g. videos/front camers haze.mp4 or local path"
+                            />
+                            <label class="media-upload-btn">
+                                📁 UPLOAD / BROWSE...
+                                <input
+                                    type="file"
+                                    id="cfg-hazed-file"
+                                    accept="video/mp4,video/*"
+                                    style="display: none"
+                                />
+                            </label>
+                        </div>
+                    </div>
+
+                    <div id="media-status-msg" class="media-status-msg" style="display: none"></div>
+                </div>
+
+                <div class="media-modal-footer">
+                    <button id="btn-reset-media" class="media-btn-secondary">↺ RESET TO CONFIG.JS</button>
+                    <div style="display: flex; gap: 8px">
+                        <button id="btn-apply-media" class="media-btn-primary">✔ APPLY & LOAD STREAMS</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scripts -->
+        <script src="config.js"></script>
+        <script src="script.js"></script>
+    </body>
+</html>
